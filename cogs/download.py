@@ -3,6 +3,7 @@ from utils.default import CustomContext
 from discord.ext import commands
 from utils.data import DiscordBot
 from utils import http
+import asyncio
 
 
 class Download_Commands(commands.Cog):
@@ -38,10 +39,13 @@ class Download_Commands(commands.Cog):
         # Remove trailing slashes and dots
         return cleaned_name.rstrip('/.').strip()
 
-    async def _make_api_request(self, url: str, headers: dict = None, res_method: str = "json"):
+    async def _make_api_request(self, url: str, headers: dict = None, res_method: str = "json", method: str = "GET", data: dict = None):
         """Make API request with error handling"""
         try:
-            response = await http.get(url, headers=headers, res_method=res_method)
+            if method.upper() == "POST":
+                response = await http.post(url, headers=headers, data=data, res_method=res_method)
+            else:
+                response = await http.get(url, headers=headers, res_method=res_method)
             return response
         except Exception as e:
             raise Exception(f"Connection Error: {type(e).__name__} - {str(e)}")
@@ -115,10 +119,97 @@ class Download_Commands(commands.Cog):
         
         return hosts_list, streams_list, redirectors_list
 
+    async def _check_delayed_link_status(self, delayed_id: str, api_key: str):
+        """Check the status of a delayed link until it's ready"""
+        headers = {'Authorization': f'Bearer {api_key}'}
+        max_attempts = 30  # Maximum 30 attempts (5 minutes with 10-second intervals)
+        attempt = 0
+        
+        while attempt < max_attempts:
+            try:
+                # Check delayed link status
+                response = await self._make_api_request(
+                    f'https://api.alldebrid.com/v4/link/delayed',
+                    headers=headers,
+                    method="GET"
+                )
+                
+                data = response.response
+                if data.get('status') == 'success':
+                    delayed_data = data.get('data', {})
+                    
+                    # Check if our delayed_id is in the list
+                    for item in delayed_data.get('links', []):
+                        if item.get('id') == delayed_id:
+                            status = item.get('status', 'unknown')
+                            
+                            if status == 'ready':
+                                # Link is ready, return the unlock data
+                                return item
+                            elif status == 'error':
+                                raise Exception(f"Link processing failed: {item.get('message', 'Unknown error')}")
+                            elif status in ['pending', 'downloading']:
+                                # Still processing, wait and try again
+                                await asyncio.sleep(10)  # Wait 10 seconds
+                                attempt += 1
+                                continue
+                            else:
+                                # Unknown status
+                                await asyncio.sleep(10)
+                                attempt += 1
+                                continue
+                    
+                    # If delayed_id not found, it might be ready or failed
+                    await asyncio.sleep(10)
+                    attempt += 1
+                    
+                else:
+                    error_msg = data.get('error', {}).get('message', 'Unknown error')
+                    raise Exception(f"API Error checking delayed status: {error_msg}")
+                    
+            except Exception as e:
+                if attempt >= max_attempts - 1:
+                    raise e
+                await asyncio.sleep(10)
+                attempt += 1
+        
+        # If we reach here, the link took too long
+        raise Exception("Link processing timed out after 5 minutes")
+
+    def _extract_file_type(self, filename: str) -> str:
+        """Extract file type from filename"""
+        if not filename or filename == 'Unknown':
+            return 'Unknown'
+        
+        if '.' in filename:
+            return filename.split('.')[-1].upper()
+        return 'No Extension'
+
+    def _format_file_size(self, size):
+        """Format file size for display"""
+        if not size or size == 'Unknown':
+            return 'Unknown'
+        
+        try:
+            size_bytes = int(size)
+            for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+                if size_bytes < 1024.0:
+                    return f"{size_bytes:.1f} {unit}"
+                size_bytes /= 1024.0
+            return f"{size_bytes:.1f} PB"
+        except (ValueError, TypeError):
+            return str(size)
+
+    def _truncate_text(self, text: str, max_length: int = 50) -> str:
+        """Truncate text with ellipsis if too long"""
+        if len(text) <= max_length:
+            return text
+        return text[:max_length] + "..."
+
     @commands.group(invoke_without_command=True)
     async def AD(self, ctx: CustomContext):
         """ AllDebrid API commands """
-        await ctx.send("Available commands:\n`!AD status` - Check API authentication\n`!AD supported_host <name>` - Check if a service is supported\n`!AD supported_hosts` - List all supported services\n`!AD history <number>` - Get recent download history")
+        await ctx.send("Available commands:\n`!AD status` - Check API authentication\n`!AD download <link>` - Unlock/download a link\n`!AD supported_host <name>` - Check if a service is supported\n`!AD supported_hosts` - List all supported services\n`!AD history <number>` - Get recent download history")
 
     @AD.command()
     async def status(self, ctx: CustomContext):
@@ -302,13 +393,13 @@ class Download_Commands(commands.Cog):
                     link = item.get('link', 'Unknown')
                     host = item.get('host', 'Unknown')
                     filename = item.get('filename', 'Unknown')
-                    size = item.get('size', 'Unknown')
+                    size = self._format_file_size(item.get('size', 'Unknown'))
                     date = item.get('date', 'Unknown')
                     status = item.get('status', 'Unknown')
                     
                     # Truncate long values for display
-                    display_link = link[:50] + "..." if len(link) > 50 else link
-                    display_filename = filename[:30] + "..." if len(filename) > 30 else filename
+                    display_link = self._truncate_text(link, 50)
+                    display_filename = self._truncate_text(filename, 30)
                     
                     # Status emoji
                     status_emoji = "✅" if status == "downloaded" else "⏳" if status == "downloading" else "❌"
@@ -326,6 +417,119 @@ class Download_Commands(commands.Cog):
             except Exception as e:
                 error_embed = self._create_error_embed("❌ Error", str(e))
                 await ctx.send(embed=error_embed)
+
+    @AD.command()
+    async def download(self, ctx: CustomContext, *, link: str):
+        """ Download/unlock a link using AllDebrid """
+        if not link:
+            await ctx.send("❌ **Error:** Please provide a link to download")
+            return
+        
+        # Clean the link
+        link = link.strip()
+        if not link.startswith(('http://', 'https://')):
+            await ctx.send("❌ **Error:** Please provide a valid URL starting with http:// or https://")
+            return
+        
+        async with ctx.channel.typing():
+            try:
+                api_key = await self._check_api_authentication()
+                headers = {'Authorization': f'Bearer {api_key}'}
+                
+                # Make POST request to unlock the link
+                data = {'link': link}
+                response = await self._make_api_request(
+                    'https://api.alldebrid.com/v4/link/unlock',
+                    headers=headers,
+                    method="POST",
+                    data=data
+                )
+                
+                data = response.response
+                if data.get('status') == 'success':
+                    unlock_data = data.get('data', {})
+                    
+                    # Check if this is a delayed response
+                    delayed_id = unlock_data.get('delayed')
+                    if delayed_id:
+                        # Send initial message about delayed processing
+                        processing_embed = discord.Embed(
+                            title="⏳ Link Processing...",
+                            description="Your link is being processed by AllDebrid. This may take a few minutes.",
+                            color=discord.Color.orange()
+                        )
+                        processing_embed.add_field(name="🔗 Original Link", value=f"```{link}```", inline=False)
+                        processing_embed.set_footer(text="Please wait while we check the status...")
+                        processing_msg = await ctx.send(embed=processing_embed)
+                        
+                        try:
+                            # Poll for completion
+                            final_data = await self._check_delayed_link_status(delayed_id, api_key)
+                            
+                            # Update the message with final results
+                            await self._send_link_info_embed(ctx, final_data, link, processing_msg)
+                            
+                        except Exception as e:
+                            # Update with error
+                            error_embed = self._create_error_embed("❌ Link Processing Failed", str(e))
+                            error_embed.add_field(name="🔗 Original Link", value=f"```{link}```", inline=False)
+                            await processing_msg.edit(embed=error_embed)
+                            
+                    else:
+                        # Immediate response, send results directly
+                        await self._send_link_info_embed(ctx, unlock_data, link)
+                    
+                else:
+                    error_msg = data.get('error', {}).get('message', 'Unknown error')
+                    embed = self._create_error_embed(
+                        "❌ Link Unlock Failed",
+                        f"**Error:** {error_msg}"
+                    )
+                    embed.add_field(name="🔗 Original Link", value=f"```{link}```", inline=False)
+                    await ctx.send(embed=embed)
+                    
+            except Exception as e:
+                error_embed = self._create_error_embed("❌ Error", str(e))
+                error_embed.add_field(name="🔗 Original Link", value=f"```{link}```", inline=False)
+                await ctx.send(embed=error_embed)
+
+    async def _send_link_info_embed(self, ctx: CustomContext, unlock_data: dict, original_link: str, message_to_edit: discord.Message = None):
+        """Send or edit a message with link information"""
+        # Extract information from the response
+        host = unlock_data.get('host', 'Unknown')
+        filename = unlock_data.get('filename', 'Unknown')
+        size = self._format_file_size(unlock_data.get('filesize', 'Unknown'))
+        download_link = unlock_data.get('link', 'No direct link available')
+        file_type = self._extract_file_type(filename)
+        
+        # Create embed with link information
+        embed = discord.Embed(
+            title="🔗 Link Unlocked Successfully!",
+            description=f"**Link processed by AllDebrid**",
+            color=discord.Color.green()
+        )
+        
+        embed.add_field(name="🌐 Host", value=host, inline=True)
+        embed.add_field(name="📁 Filename", value=filename, inline=True)
+        embed.add_field(name="📏 Size", value=size, inline=True)
+        embed.add_field(name="📋 Type", value=file_type, inline=True)
+        
+        # Add download link if available
+        if download_link and download_link != 'No direct link available':
+            # Add full link as hidden field for copying
+            embed.add_field(name="🔗 Full Download Link (Click to reveal)", value=f"||{download_link}||", inline=False)
+        else:
+            embed.add_field(name="⚠️ Note", value="No direct download link available for this file type", inline=False)
+        
+        # Add original link
+        embed.add_field(name="🔗 Original Link", value=f"```{original_link}```", inline=False)
+        
+        embed.set_footer(text="Use the spoiler field to copy the full download link")
+        
+        if message_to_edit:
+            await message_to_edit.edit(embed=embed)
+        else:
+            await ctx.send(embed=embed)
 
 
 async def setup(bot):
