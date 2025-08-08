@@ -1,0 +1,13 @@
+---
+description: the basic requirement for everything you write
+globs:
+alwaysApply: false
+---
+- The app will use python 3 as the main programming language
+- The app will use discord.py as the main library
+- The main API reference and documentation for discord.py can be found here https://discordpy.readthedocs.io/en/latest/api.html 
+- The interaction API reference and documentation for discord.py can be found here https://discordpy.readthedocs.io/en/latest/interactions/api.html
+- The bot command framework can be found here https://discordpy.readthedocs.io/en/latest/ext/commands/index.html
+- The app will use SQLite as a database if it needs to store any data
+- The commands will be located under /cogs folder and in subfolder if needed
+- The utils will be located under /utils folder

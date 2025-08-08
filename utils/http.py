@@ -20,24 +20,22 @@ class HTTPResponse:
 
 async def query(url, method="get", res_method="text", *args, **kwargs) -> HTTPResponse:
     """ Make a HTTP request using aiohttp """
-    session = aiohttp.ClientSession()
+    async with aiohttp.ClientSession() as session:
+        async with getattr(session, method.lower())(url, *args, **kwargs) as res:
+            try:
+                r = await getattr(res, res_method)()
+            except ContentTypeError:
+                if res_method == "json":
+                    r = json.loads(await res.text())
 
-    async with getattr(session, method.lower())(url, *args, **kwargs) as res:
-        try:
-            r = await getattr(res, res_method)()
-        except ContentTypeError:
-            if res_method == "json":
-                r = json.loads(await res.text())
+            output = HTTPResponse(
+                status=res.status,
+                response=r,
+                res_method=res_method,
+                headers=res.headers
+            )
 
-        output = HTTPResponse(
-            status=res.status,
-            response=r,
-            res_method=res_method,
-            headers=res.headers
-        )
-
-    await session.close()
-    return output
+        return output
 
 
 async def get(url, *args, **kwargs) -> HTTPResponse:

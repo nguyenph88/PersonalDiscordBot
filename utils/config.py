@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from dotenv import dotenv_values
+import os
 
 
 @dataclass
@@ -17,6 +18,9 @@ class Config:
     discord_activity_name: str
     discord_activity_type: str
     discord_status_type: str
+    
+    # AllDebrid API configuration
+    alldebrid_api_key: str = None
 
     @classmethod
     def from_dict(self, **kwargs) -> "Config":
@@ -36,4 +40,11 @@ class Config:
     @classmethod
     def from_env(self, filename: str = ".env") -> "Config":
         """ Create a Config object from a .env file. """
+        # Check if .env file exists
+        if not os.path.exists(filename):
+            print(f"Warning: {filename} file not found. Please create it with the required environment variables.")
+            print("Required variables: DISCORD_TOKEN, DISCORD_PREFIX, DISCORD_OWNER_ID, DISCORD_JOIN_MESSAGE, DISCORD_ACTIVITY_NAME, DISCORD_ACTIVITY_TYPE, DISCORD_STATUS_TYPE")
+            print("Optional variables: ALLDEBRID_API_KEY")
+            raise FileNotFoundError(f"{filename} file not found. Please create it with the required environment variables.")
+        
         return Config.from_dict(**dotenv_values(filename))
