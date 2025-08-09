@@ -529,52 +529,96 @@ class Download_Commands(commands.Cog):
                     print(magnet_data) ################
                     
                     if magnets:
-                         # The magnets data is actually a dictionary, not a list
-                         magnet_info = magnets[0]  # Get the magnet data directly
-                         
-                         magnet_id = magnet_info.get('id')
-                         magnet_name = magnet_info.get('name', 'Unknown')  # Use 'filename' instead of 'name'
-                         
-                         # Get size from the correct field
-                         size_value = magnet_info.get('size')
-                         magnet_size = self._format_file_size(size_value) if size_value else 'Unknown'
-                         
-                         if magnet_id:
-                             embed = self._create_success_embed(
-                                 "🧲 Magnet Uploaded Successfully!",
-                                 f"**Magnet uploaded to AllDebrid**"
-                             )
-                             embed.add_field(name="🔗 Magnet ID", value=f"`{magnet_id}`", inline=True)
-                             embed.add_field(name="📁 Name", value=magnet_name, inline=True)
-                             embed.add_field(name="📏 Size", value=magnet_size, inline=True)
-                             
-                             embed.set_footer(text="Use this Magnet ID for further operations")
-                             await ctx.send(embed=embed)
-                             
-                             # Send follow-up message with next steps
-                             next_steps_embed = discord.Embed(
-                                 title="📋 Next Steps",
-                                 description="To check the status of your uploaded magnet, use the following command:",
-                                 color=discord.Color.blue()
-                             )
-                             next_steps_embed.add_field(
-                                 name="🔍 Check Magnet Status",
-                                 value=f"`!AD magnet_check_id {magnet_id}`",
-                                 inline=False
-                             )
-                             next_steps_embed.add_field(
-                                 name="📁 Get Files to Download (when ready)",
-                                 value=f"`!AD magnet_get_files {magnet_id}`",
-                                 inline=False
-                             )
-                             next_steps_embed.add_field(
-                                 name="🔗 Request Direct File Download (when ready)",
-                                 value=f"`!AD download <file_link>`",
-                                 inline=False
-                             )
-                             next_steps_embed.set_footer(text="The magnet may take some time to process")
-                             await ctx.send(embed=next_steps_embed)
-                         else:
+                        # The magnets data is actually a dictionary, not a list
+                        magnet_info = magnets[0]  # Get the magnet data directly
+                        
+                        magnet_id = magnet_info.get('id')
+                        magnet_name = magnet_info.get('name', 'Unknown')  # Use 'filename' instead of 'name'
+                        
+                        # Get size from the correct field
+                        size_value = magnet_info.get('size')
+                        magnet_size = self._format_file_size(size_value) if size_value else 'Unknown'
+                        
+                        if magnet_id:
+                            embed = self._create_success_embed(
+                                "🧲 Magnet Uploaded Successfully!",
+                                f"**Magnet uploaded to AllDebrid**"
+                            )
+                            embed.add_field(name="🔗 Magnet ID", value=f"`{magnet_id}`", inline=True)
+                            embed.add_field(name="📁 Name", value=magnet_name, inline=True)
+                            embed.add_field(name="📏 Size", value=magnet_size, inline=True)
+                            
+                            embed.set_footer(text="Use this Magnet ID for further operations")
+                            await ctx.send(embed=embed)
+                            
+                            # Send combined next steps and status check message
+                            combined_embed = discord.Embed(
+                                title="📋 Next Steps & Quick Status Check",
+                                description="To check the status of your uploaded magnet, use the following commands:",
+                                color=discord.Color.blue()
+                            )
+                            combined_embed.add_field(
+                                name="🔍 Check Magnet Status",
+                                value=f"`!AD magnet_check_id {magnet_id}`",
+                                inline=False
+                            )
+                            combined_embed.add_field(
+                                name="📁 Get Files to Download (when ready)",
+                                value=f"`!AD magnet_get_files {magnet_id}`",
+                                inline=False
+                            )
+                            combined_embed.add_field(
+                                name="🔗 Request Direct File Download (when ready)",
+                                value=f"`!AD download <file_link>`",
+                                inline=False
+                            )
+                            combined_embed.add_field(
+                                name="🤔 Quick Status Check",
+                                value="Do you want me to check the status of the magnet for you?\n*(The file can only be downloaded when the status is Ready)*",
+                                inline=False
+                            )
+                            combined_embed.add_field(
+                                name="👍 React with thumbs up (within 30 seconds)",
+                                value="I'll automatically check the magnet status for you",
+                                inline=False
+                            )
+                            combined_embed.add_field(
+                                name="⏰ Or wait and check manually",
+                                value=f"Use `!AD magnet_check_id {magnet_id}` when you're ready",
+                                inline=False
+                            )
+                            combined_embed.set_footer(text="The magnet may take some time to process")
+                            
+                            status_msg = await ctx.send(embed=combined_embed)
+                            await status_msg.add_reaction("👍")
+                            
+                            # Wait for reaction
+                            def check(reaction, user):
+                                return user == ctx.author and str(reaction.emoji) == "👍" and reaction.message.id == status_msg.id
+                            
+                            try:
+                                await self.bot.wait_for('reaction_add', timeout=30.0, check=check)
+                                
+                                # User reacted with thumbs up, automatically check status
+                                await ctx.send(f"👍 **Checking magnet status automatically...**")
+                                
+                                # Call the magnet_check_id function
+                                await self.magnet_check_id(ctx, str(magnet_id))
+                                
+                            except asyncio.TimeoutError:
+                                # No reaction within 30 seconds
+                                timeout_embed = discord.Embed(
+                                    title="⏰ Time's up!",
+                                    description="You can check the magnet status manually anytime using:",
+                                    color=discord.Color.orange()
+                                )
+                                timeout_embed.add_field(
+                                    name="🔍 Manual Status Check",
+                                    value=f"`!AD magnet_check_id {magnet_id}`",
+                                    inline=False
+                                )
+                                await ctx.send(embed=timeout_embed)
+                        else:
                             embed = self._create_error_embed(
                                 "❌ Magnet Upload Failed",
                                 "No magnet ID returned from AllDebrid"
