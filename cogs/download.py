@@ -719,9 +719,8 @@ class Download_Commands(commands.Cog):
                     
                     if magnet_data:
                         # Extract magnet information from the correct structure
-                        magnet_name = magnet_data.get('name', 'Unknown')
                         magnet_status = magnet_data.get('status', 'Unknown')
-                        magnet_progress = 100 if magnet_status == 'Ready' else 0  # Set progress based on status
+                        magnet_progress = "Ready" if magnet_status == 'Ready' else "Not Ready (maybe not enough seeders??!!)"
                         
                         # Get size from the correct field
                         size_value = magnet_data.get('size')
@@ -742,9 +741,8 @@ class Download_Commands(commands.Cog):
                             color=discord.Color.blue()
                         )
                         
-                        embed.add_field(name="📁 Name", value=magnet_name, inline=True)
                         embed.add_field(name="📏 Size", value=magnet_size, inline=True)
-                        embed.add_field(name="📊 Progress", value=f"{magnet_progress}%", inline=True)
+                        embed.add_field(name="📊 Progress", value=f"{magnet_progress}", inline=True)
                         
                         # Status with emoji (case-insensitive comparison)
                         status_lower = magnet_status.lower()
@@ -766,7 +764,11 @@ class Download_Commands(commands.Cog):
                         else:
                             embed.add_field(name="📋 Files", value="No files available yet", inline=False)
                         
-                        embed.set_footer(text=f"Magnet ID: {magnet_id}")
+                        # Set footer based on magnet status
+                        if status_lower != "ready":
+                            embed.set_footer(text=f"Magnet ID: {magnet_id} | Run `!AD magnet_check_id {magnet_id}` again later to check status")
+                        else:
+                            embed.set_footer(text=f"Magnet ID: {magnet_id}")
                         await ctx.send(embed=embed)
                     else:
                         embed = self._create_error_embed(
