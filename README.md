@@ -40,9 +40,24 @@ Just a personal discord bot for my things
 
 1. Get your API key from [AllDebrid](https://alldebrid.com/)
 2. Add your API key to the `.env` file as `ALLDEBRID_API_KEY`
-3. Use the `!download status` command to verify your API authentication
+3. Use the `!AD status` command to verify your API authentication
 
 ## Commands
 
-- `!download` - Basic download command
-- `!download status` - Check AllDebrid API authentication status
+### AllDebrid Commands (Prefix: !AD)
+
+- `!AD status` - Check AllDebrid API authentication status
+- `!AD history <limit>` - Get download history (default: 10)
+- `!AD supported_hosts` - List all supported hosts
+- `!AD supported_host <name>` - Check if a specific host is supported
+- `!AD download <link>` - Unlock a direct download link
+- `!AD magnet_upload <magnet_uri>` - Upload a magnet URI and get magnet ID
+- `!AD magnet_get_status <magnet_id>` - Check magnet status and information
+- `!AD magnet_get_files <magnet_id>` - Get downloadable files for a magnet
+- `!AD magnet_get <magnet_uri>` - Upload magnet and immediately check status
+- `!AD magnet_search <url>` - Search for magnet URIs on a given URL
+
+### Basic Commands
+
+- `!download` - Basic download command (legacy)
+- `!help` - Show help information

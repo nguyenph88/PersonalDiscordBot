@@ -3,6 +3,9 @@ from utils.default import CustomContext
 from discord.ext import commands
 from utils.data import DiscordBot
 from utils import http
+import requests
+from bs4 import BeautifulSoup
+import re
 import asyncio
 
 
@@ -218,7 +221,7 @@ class Download_Commands(commands.Cog):
     @commands.group(invoke_without_command=True)
     async def AD(self, ctx: CustomContext):
         """ AllDebrid API commands """
-        await ctx.send("Available commands:\n`!AD status` - Check API authentication\n`!AD download <link>` - Unlock/download a link\n`!AD magnet_upload <magnet_uri>` - Upload magnet link to AllDebrid and get Magnet ID\n`!AD magnet_get_status <magnet_id>` - Check magnet status and information\n`!AD magnet_get_files <magnet_id>` - Get all download files and links\n`!AD supported_host <name>` - Check if a service is supported\n`!AD supported_hosts` - List all supported services\n`!AD history <number>` - Get recent download history")
+        await ctx.send("Available commands:\n`!AD status` - Check API authentication\n`!AD download <link>` - Unlock/download a link\n`!AD magnet_upload <magnet_uri>` - Upload magnet link to AllDebrid and get Magnet ID\n`!AD magnet_get_status <magnet_id>` - Check magnet status and information\n`!AD magnet_get_files <magnet_id>` - Get all download files and links\n`!AD magnet_search <url>` - Search for magnet URIs on a given URL\n`!AD supported_host <name>` - Check if a service is supported\n`!AD supported_hosts` - List all supported services\n`!AD history <number>` - Get recent download history")
 
     @AD.command()
     async def status(self, ctx: CustomContext):
@@ -839,7 +842,7 @@ class Download_Commands(commands.Cog):
                             value=f"Use `!AD magnet_get_files {magnet_id}` when you're ready",
                             inline=False
                         )
-                        next_steps_embed.set_footer(text="Links will expire in 24 hours")
+                        next_steps_embed.set_footer(text="Links will expire in 48 hours")
                         
                         files_msg = await ctx.send(embed=next_steps_embed)
                         await files_msg.add_reaction("👍")
@@ -1000,7 +1003,7 @@ class Download_Commands(commands.Cog):
                         
                             download_instructions_embed.add_field(
                                 name="⚠️ Important Notes",
-                                value="• Links will expire in 24 hours\n• You can download files one at a time\n• Some files in the magnet are trash or virus files - use your own judgement\n• Commands are in code blocks for easy copying",
+                                value="• Links will expire in 48 hours\n• You can download files one at a time\n• Some files in the magnet are trash or virus files - use your own judgement\n• Commands are in code blocks for easy copying",
                                 inline=False
                             )
                             
@@ -1066,12 +1069,206 @@ class Download_Commands(commands.Cog):
         # Add original link
         embed.add_field(name="🔗 Original Link", value=f"```{original_link}```", inline=False)
         
-        embed.set_footer(text="Link will expire in 24 hours")
+        embed.set_footer(text="Link will expire in 48 hours")
         
         if message_to_edit:
             await message_to_edit.edit(embed=embed)
         else:
             await ctx.send(embed=embed)
+
+    @AD.command()
+    async def magnet_search(self, ctx: CustomContext, *, url: str):
+        """Search for magnet URIs on a given URL"""
+        if not url:
+            await ctx.send("❌ **Error:** Please provide a URL to search")
+            return
+        
+        # Clean the URL
+        url = url.strip()
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+        
+        async with ctx.channel.typing():
+            try:
+                # Send initial message
+                search_msg = await ctx.send("🔍 **Searching for magnet links...**")
+                
+                # Make HTTP request to the URL
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }
+                
+                response = requests.get(url, headers=headers, timeout=30)
+                response.raise_for_status()
+                
+                # Parse HTML content
+                soup = BeautifulSoup(response.content, 'html.parser')
+                
+                # Find all text content and links
+                text_content = soup.get_text()
+                links = soup.find_all('a', href=True)
+                
+                # Check for bot protection (minimal content, no magnets)
+                content_length = len(response.content)
+                text_length = len(text_content)
+                
+                # If we get very little content, it's likely bot protection
+                if content_length < 10000 or text_length < 1000:
+                    # Check if this looks like a bot-blocked page
+                    bot_indicators = [
+                        'blocked' in text_content.lower(),
+                        'captcha' in text_content.lower(),
+                        'robot' in text_content.lower(),
+                        'access denied' in text_content.lower(),
+                        'forbidden' in text_content.lower(),
+                        len(links) < 10,  # Very few links
+                        all('redirect' in link.get('href', '').lower() for link in links[:5])  # All redirect links
+                    ]
+                    
+                    if any(bot_indicators) or (content_length < 5000 and text_length < 500):
+                        # This is likely bot protection
+                        embed = discord.Embed(
+                            title="🚫 Bot Protection Detected",
+                            description="This website appears to block automated requests and bots",
+                            color=discord.Color.orange()
+                        )
+                        
+                        embed.add_field(
+                            name="🔗 URL Searched",
+                            value=f"```{url}```",
+                            inline=False
+                        )
+                        
+                        embed.add_field(
+                            name="⚠️ What Happened",
+                            value="• The website detected this as an automated request\n• Only minimal content was returned\n• Magnet links are hidden from bots",
+                            inline=False
+                        )
+                        
+                        embed.add_field(
+                            name="💡 Solutions",
+                            value="• Try accessing the URL manually in a browser\n• Use a different torrent site\n• Consider using torrent search APIs instead\n• Some sites require JavaScript or cookies",
+                            inline=False
+                        )
+                        
+                        embed.add_field(
+                            name="📊 Technical Details",
+                            value=f"• Content size: {content_length} bytes\n• Text length: {text_length} characters\n• Links found: {len(links)}",
+                            inline=False
+                        )
+                        
+                        embed.set_footer(text="Bot protection detected | Magnet search failed")
+                        
+                        await search_msg.edit(content="❌ **Bot protection detected**", embed=embed)
+                        return
+                
+                # Extract magnet URIs using regex pattern
+                magnet_pattern = r'magnet:\?[^\s<>"\']+'
+                found_magnets = re.findall(magnet_pattern, text_content)
+                
+                # Also check href attributes for magnet links
+                for link in links:
+                    href = link.get('href', '')
+                    if href.startswith('magnet:?'):
+                        found_magnets.append(href)
+                
+                # Remove duplicates while preserving order
+                unique_magnets = []
+                seen = set()
+                for magnet in found_magnets:
+                    if magnet not in seen:
+                        unique_magnets.append(magnet)
+                        seen.add(magnet)
+                
+                # Update search message with results
+                if unique_magnets:
+                    # Create success embed
+                    embed = discord.Embed(
+                        title="🧲 Magnet Search Results",
+                        description=f"Found **{len(unique_magnets)}** magnet link(s) on the page",
+                        color=discord.Color.green()
+                    )
+                    
+                    embed.add_field(
+                        name="🔗 URL Searched",
+                        value=f"```{url}```",
+                        inline=False
+                    )
+                    
+                    embed.add_field(
+                        name="📊 Results",
+                        value=f"**Total found:** {len(found_magnets)}\n**Unique magnets:** {len(unique_magnets)}",
+                        inline=True
+                    )
+                    
+                    # Show first few magnets (truncated if too long)
+                    if len(unique_magnets) <= 3:
+                        magnets_display = "\n".join([f"• `{magnet[:100]}...`" if len(magnet) > 100 else f"• `{magnet}`" for magnet in unique_magnets])
+                    else:
+                        magnets_display = "\n".join([f"• `{magnet[:100]}...`" if len(magnet) > 100 else f"• `{magnet}`" for magnet in unique_magnets[:3]])
+                        magnets_display += f"\n... and {len(unique_magnets) - 3} more magnets"
+                    
+                    embed.add_field(
+                        name="🧲 Magnets Found",
+                        value=magnets_display,
+                        inline=False
+                    )
+                    
+                    embed.add_field(
+                        name="💡 Next Steps",
+                        value="Use `!AD magnet_upload <magnet_uri>` to upload any magnet and continue the workflow",
+                        inline=False
+                    )
+                    
+                    embed.add_field(
+                        name="⚠️ Note",
+                        value="• Copy the full magnet URI from the results above\n• Some magnets may be duplicates or invalid\n• Use magnets with many seeders for better download success",
+                        inline=False
+                    )
+                    
+                    embed.set_footer(text=f"Search completed | {len(unique_magnets)} unique magnets found")
+                    
+                    await search_msg.edit(content="✅ **Search completed!**", embed=embed)
+                    
+                else:
+                    # No magnets found
+                    embed = discord.Embed(
+                        title="🔍 No Magnets Found",
+                        description="No magnet links were found on the specified URL",
+                        color=discord.Color.orange()
+                    )
+                    
+                    embed.add_field(
+                        name="🔗 URL Searched",
+                        value=f"```{url}```",
+                        inline=False
+                    )
+                    
+                    embed.add_field(
+                        name="💡 Suggestions",
+                        value="• Make sure the URL contains magnet links\n• Check if the page requires authentication\n• Try different pages on the same website\n• Verify the magnets are in the correct format (magnet:?...)",
+                        inline=False
+                    )
+                    
+                    embed.set_footer(text="Search completed | No magnets found")
+                    
+                    await search_msg.edit(content="❌ **No magnets found**", embed=embed)
+                    
+            except requests.exceptions.RequestException as e:
+                error_embed = self._create_error_embed(
+                    "❌ Connection Error",
+                    f"Unable to connect to the URL: {str(e)}"
+                )
+                error_embed.add_field(name="🔗 URL", value=f"```{url}```", inline=False)
+                await search_msg.edit(content="❌ **Search failed**", embed=error_embed)
+                
+            except Exception as e:
+                error_embed = self._create_error_embed(
+                    "❌ Search Error",
+                    f"An error occurred while searching: {str(e)}"
+                )
+                error_embed.add_field(name="🔗 URL", value=f"```{url}```", inline=False)
+                await search_msg.edit(content="❌ **Search failed**", embed=error_embed)
 
 
 async def setup(bot):
