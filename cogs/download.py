@@ -12,6 +12,9 @@ class Download_Commands(commands.Cog):
     
     # Global wait time for API calls (in seconds)
     API_WAIT_TIME = 5
+
+    # global loop time to run the magnet_check_id command
+    MAGNET_CHECK_ID_LOOP_TIME = 3
     
     # Global wait time for user reactions (in seconds)
     REACTION_WAIT_TIME = 15
@@ -696,156 +699,177 @@ class Download_Commands(commands.Cog):
                 api_key = await self._check_api_authentication()
                 headers = {'Authorization': f'Bearer {api_key}'}
                 
-                # Make POST request to check magnet status
                 # Convert magnet_id to integer array as required by API
                 try:
                     magnet_id_int = int(magnet_id)
-                    data = {'id': magnet_id_int}
+                    headerdata = {'id': magnet_id_int}
                 except ValueError:
                     await ctx.send("❌ **Error:** Magnet ID must be a valid number")
                     return
                 
-                response = await self._make_api_request(
-                    'https://api.alldebrid.com/v4.1/magnet/status',
-                    headers=headers,
-                    method="POST",
-                    data=data
-                )
+                # Loop to check magnet status multiple times
+                magnet_status = None
+                magnet_data = None
                 
-                data = response.response
+                for loop_count in range(self.MAGNET_CHECK_ID_LOOP_TIME + 1):
+                    # Make POST request to check magnet status
+                    response = await self._make_api_request(
+                        'https://api.alldebrid.com/v4.1/magnet/status',
+                        headers=headers,
+                        method="POST",
+                        data=headerdata
+                    )
+                    
+                    data = response.response
+                    
+                    if data.get('status') == 'success':
+                        magnet_data = data.get('data', {}).get('magnets', {})
+                        
+                        if magnet_data:
+                            magnet_status = magnet_data.get('status', 'Unknown')
+                            status_lower = magnet_status.lower()
+                            
+                            # If magnet is ready, break out of the loop
+                            if status_lower == "ready":
+                                break
+                            
+                            # If not ready and not the last loop, wait before next attempt
+                            if loop_count < self.MAGNET_CHECK_ID_LOOP_TIME - 1:
+                                await ctx.send(f"⏳ **Attempt {loop_count + 1}/{self.MAGNET_CHECK_ID_LOOP_TIME}:** Magnet not ready yet. Waiting {self.API_WAIT_TIME} seconds before next check...")
+                                await asyncio.sleep(self.API_WAIT_TIME)
 
-                if data.get('status') == 'success':
-                    magnet_data = data.get('data', {}).get('magnets', {})
-                    
-                    if magnet_data:
-                        # Extract magnet information from the correct structure
-                        magnet_status = magnet_data.get('status', 'Unknown')
-                        magnet_progress = "Ready" if magnet_status == 'Ready' else "Not Ready (maybe not enough seeders??!!)"
-                        
-                        # Get size from the correct field
-                        size_value = magnet_data.get('size')
-                        magnet_size = self._format_file_size(size_value) if size_value else 'Unknown'
-                        
-                        # Get files from the correct structure
-                        files = magnet_data.get('files', [])
-                        magnet_links = []
-                        if files:
-                            for file_group in files:
-                                if 'e' in file_group:  # 'e' contains the actual files
-                                    magnet_links.extend(file_group['e'])
-                    
-                        # Create embed with magnet information
-                        embed = discord.Embed(
-                            title="🧲 Magnet Status Check",
-                            description=f"**Magnet ID:** `{magnet_id}`",
-                            color=discord.Color.blue()
-                        )
-                        
-                        embed.add_field(name="📏 Size", value=magnet_size, inline=True)
-                        embed.add_field(name="📊 Progress", value=f"{magnet_progress}", inline=True)
-                        
-                        # Status with emoji (case-insensitive comparison)
-                        status_lower = magnet_status.lower()
-                        status_emoji = "✅" if status_lower == "ready" else "⏳" if status_lower == "downloading" else "❌"
-                        embed.add_field(name="🔄 Status: (waiting for seeders)", value=f"{status_emoji} {magnet_status.title()}", inline=True)
-                        
-                        # Add links if available
-                        if magnet_links:
-                            embed.add_field(name="🔗 Links", value=f"{len(magnet_links)} files available", inline=True)
-                            
-                            # Show first few links
-                            if len(magnet_links) <= 5:
-                                links_display = "\n".join([f"• {link.get('n', 'Unknown')} ({self._format_file_size(link.get('s', 'Unknown'))})" for link in magnet_links])
-                            else:
-                                links_display = "\n".join([f"• {link.get('n', 'Unknown')} ({self._format_file_size(link.get('s', 'Unknown'))})" for link in magnet_links[:5]])
-                                links_display += f"\n... and {len(magnet_links) - 5} more files"
-                            
-                            embed.add_field(name="📋 Files", value=links_display, inline=False)
+                            # if last loop, send error message
+                            if loop_count == self.MAGNET_CHECK_ID_LOOP_TIME:
+                                await ctx.send(f"⏳ **Attempt {loop_count}/{self.MAGNET_CHECK_ID_LOOP_TIME}:** Magnet not ready yet. Printing the magnet data...")
                         else:
-                            embed.add_field(name="📋 Files", value="No files available yet", inline=False)
+                            # Magnet not found, break out of loop
+                            break
+                    else:
+                        # API error, break out of loop
+                        break
+                
+                # Process the final result
+                if data.get('status') == 'success' and magnet_data:
+                    # Extract magnet information from the correct structure
+                    magnet_progress = "Ready" if magnet_status == 'Ready' else "Not Ready (maybe not enough seeders??!!)"
+                    
+                    # Get size from the correct field
+                    size_value = magnet_data.get('size')
+                    magnet_size = self._format_file_size(size_value) if size_value else 'Unknown'
+                    
+                    # Get files from the correct structure
+                    files = magnet_data.get('files', [])
+                    magnet_links = []
+                    if files:
+                        for file_group in files:
+                            if 'e' in file_group:  # 'e' contains the actual files
+                                magnet_links.extend(file_group['e'])
+                
+                    # Create embed with magnet information
+                    embed = discord.Embed(
+                        title="🧲 Magnet Status Check",
+                        description=f"**Magnet ID:** `{magnet_id}`",
+                        color=discord.Color.blue()
+                    )
+                    
+                    embed.add_field(name="📏 Size", value=magnet_size, inline=True)
+                    embed.add_field(name="📊 Progress", value=f"{magnet_progress}", inline=True)
+                    
+                    # Status with emoji (case-insensitive comparison)
+                    status_lower = magnet_status.lower()
+                    status_emoji = "✅" if status_lower == "ready" else "⏳" if status_lower == "downloading" else "❌"
+                    embed.add_field(name="🔄 Status: (waiting for seeders)", value=f"{status_emoji} {magnet_status.title()}", inline=True)
+                    
+                    # Add links if available
+                    if magnet_links:
+                        embed.add_field(name="🔗 Links", value=f"{len(magnet_links)} files available", inline=True)
                         
-                        # add magnet_check_id command to the embed
-                        if status_lower != "ready":
-                            embed.add_field(name="🔍 Check Magnet Status", value=f"- Use `!AD magnet_check_id {magnet_id}`\n- Don't complain, use some magnet with many seeders to get a good download :)", inline=False)
-                        # Set footer based on magnet status
-                        embed.set_footer(text=f"Magnet ID: {magnet_id}")
-                        await ctx.send(embed=embed)
+                        # Show first few links
+                        if len(magnet_links) <= 5:
+                            links_display = "\n".join([f"• {link.get('n', 'Unknown')} ({self._format_file_size(link.get('s', 'Unknown'))})" for link in magnet_links])
+                        else:
+                            links_display = "\n".join([f"• {link.get('n', 'Unknown')} ({self._format_file_size(link.get('s', 'Unknown'))})" for link in magnet_links[:5]])
+                            links_display += f"\n... and {len(magnet_links) - 5} more files"
                         
-                        # If magnet is ready, send additional message about next steps
-                        if status_lower == "ready":
-                            next_steps_embed = discord.Embed(
-                                title="🎉 Magnet Ready for Download!",
-                                description="Your magnet is ready! Here's how to download your files:",
-                                color=discord.Color.green()
+                        embed.add_field(name="📋 Files", value=links_display, inline=False)
+                    else:
+                        embed.add_field(name="📋 Files", value="No files available yet", inline=False)
+                    
+                    # add magnet_check_id command to the embed
+                    if status_lower != "ready":
+                        embed.add_field(name="🔍 Check Magnet Status (again later)", value=f"- Use `!AD magnet_check_id {magnet_id}`\n- Don't complain, use a magnet with many seeders to get a good download :)", inline=False)
+                    # Set footer based on magnet status
+                    embed.set_footer(text=f"Magnet ID: {magnet_id}")
+                    await ctx.send(embed=embed)
+                    
+                    # If magnet is ready, send additional message about next steps
+                    if status_lower == "ready":
+                        next_steps_embed = discord.Embed(
+                            title="🎉 Magnet Ready for Download!",
+                            description="Your magnet is ready! Here's how to download your files:",
+                            color=discord.Color.green()
+                        )
+                        next_steps_embed.add_field(
+                            name="📁 Step 1: Get Download Links",
+                            value=f"`!AD magnet_get_files {magnet_id}`",
+                            inline=False
+                        )
+                        next_steps_embed.add_field(
+                            name="🔗 Step 2: Download Files",
+                            value="`!AD download <file_link>`\n*(Use the links from Step 1)*",
+                            inline=False
+                        )
+                        next_steps_embed.add_field(
+                            name="💡 Tip",
+                            value="There may be some trash files in the magnet, so check the files before downloading.",
+                            inline=False
+                        )
+                        next_steps_embed.add_field(
+                            name="🤔 Quick File List",
+                            value="Do you want me to get the file list for you?\n*(I'll automatically run the magnet_get_files command)*",
+                            inline=False
+                        )
+                        next_steps_embed.add_field(
+                            name=f"👍 React with thumbs up (within {self.REACTION_WAIT_TIME} seconds)",
+                            value="I'll automatically get the file list for you",
+                            inline=False
+                        )
+                        next_steps_embed.add_field(
+                            name="⏰ Or get files manually",
+                            value=f"Use `!AD magnet_get_files {magnet_id}` when you're ready",
+                            inline=False
+                        )
+                        next_steps_embed.set_footer(text="Links will expire in 24 hours")
+                        
+                        files_msg = await ctx.send(embed=next_steps_embed)
+                        await files_msg.add_reaction("👍")
+                        
+                        # Wait for reaction
+                        def check(reaction, user):
+                            return user == ctx.author and str(reaction.emoji) == "👍" and reaction.message.id == files_msg.id
+                        
+                        try:
+                            await self.bot.wait_for('reaction_add', timeout=self.REACTION_WAIT_TIME, check=check)
+                            
+                            # User reacted with thumbs up, automatically get files
+                            await ctx.send(f"👍 **Getting file list automatically...**")
+                            
+                            # Call the magnet_get_files function
+                            await self.magnet_get_files(ctx, str(magnet_id))
+                            
+                        except asyncio.TimeoutError:
+                            # No reaction within timeout period
+                            timeout_embed = discord.Embed(
+                                title="⏰ Time's up!",
+                                description="You can get the file list manually anytime using:",
+                                color=discord.Color.orange()
                             )
-                            next_steps_embed.add_field(
-                                name="📁 Step 1: Get Download Links",
+                            timeout_embed.add_field(
+                                name="📁 Manual File List",
                                 value=f"`!AD magnet_get_files {magnet_id}`",
                                 inline=False
                             )
-                            next_steps_embed.add_field(
-                                name="🔗 Step 2: Download Files",
-                                value="`!AD download <file_link>`\n*(Use the links from Step 1)*",
-                                inline=False
-                            )
-                            next_steps_embed.add_field(
-                                name="💡 Tip",
-                                value="There may be some trash files in the magnet, so check the files before downloading.",
-                                inline=False
-                            )
-                            next_steps_embed.add_field(
-                                name="🤔 Quick File List",
-                                value="Do you want me to get the file list for you?\n*(I'll automatically run the magnet_get_files command)*",
-                                inline=False
-                            )
-                            next_steps_embed.add_field(
-                                name=f"👍 React with thumbs up (within {self.REACTION_WAIT_TIME} seconds)",
-                                value="I'll automatically get the file list for you",
-                                inline=False
-                            )
-                            next_steps_embed.add_field(
-                                name="⏰ Or get files manually",
-                                value=f"Use `!AD magnet_get_files {magnet_id}` when you're ready",
-                                inline=False
-                            )
-                            next_steps_embed.set_footer(text="Links will expire in 24 hours")
-                            
-                            files_msg = await ctx.send(embed=next_steps_embed)
-                            await files_msg.add_reaction("👍")
-                            
-                            # Wait for reaction
-                            def check(reaction, user):
-                                return user == ctx.author and str(reaction.emoji) == "👍" and reaction.message.id == files_msg.id
-                            
-                            try:
-                                await self.bot.wait_for('reaction_add', timeout=self.REACTION_WAIT_TIME, check=check)
-                                
-                                # User reacted with thumbs up, automatically get files
-                                await ctx.send(f"👍 **Getting file list automatically...**")
-                                
-                                # Call the magnet_get_files function
-                                await self.magnet_get_files(ctx, str(magnet_id))
-                                
-                            except asyncio.TimeoutError:
-                                # No reaction within timeout period
-                                timeout_embed = discord.Embed(
-                                    title="⏰ Time's up!",
-                                    description="You can get the file list manually anytime using:",
-                                    color=discord.Color.orange()
-                                )
-                                timeout_embed.add_field(
-                                    name="📁 Manual File List",
-                                    value=f"`!AD magnet_get_files {magnet_id}`",
-                                    inline=False
-                                )
-                                await ctx.send(embed=timeout_embed)
-                    else:
-                        embed = self._create_error_embed(
-                            "❌ Magnet Not Found",
-                            f"No magnet found with ID: `{magnet_id}`"
-                        )
-                        await ctx.send(embed=embed)
-                    
+                            await ctx.send(embed=timeout_embed)
                 else:
                     error_msg = data.get('error', {}).get('message', 'Unknown error')
                     embed = self._create_error_embed(
