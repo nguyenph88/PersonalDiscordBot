@@ -11,7 +11,7 @@ class Download_Commands(commands.Cog):
         self.bot: DiscordBot = bot
     
     # Global wait time for API calls (in seconds)
-    API_WAIT_TIME = 3
+    API_WAIT_TIME = 5
     
     # Global wait time for user reactions (in seconds)
     REACTION_WAIT_TIME = 15
@@ -530,9 +530,6 @@ class Download_Commands(commands.Cog):
                 if data.get('status') == 'success':
                     magnet_data = data.get('data', {})
                     magnets = magnet_data.get('magnets', [])
-
-                    print(magnets) ################
-                    print(magnet_data) ################
                     
                     if magnets:
                         # The magnets data is actually a dictionary, not a list
@@ -612,7 +609,7 @@ class Download_Commands(commands.Cog):
                                 inline=False
                             )
                             combined_embed.add_field(
-                                name="👍 React with thumbs up (within 30 seconds)",
+                                name=f"👍 React with thumbs up (within {self.REACTION_WAIT_TIME} seconds)",
                                 value="I'll automatically check the magnet status for you",
                                 inline=False
                             )
@@ -631,7 +628,7 @@ class Download_Commands(commands.Cog):
                                 return user == ctx.author and str(reaction.emoji) == "👍" and reaction.message.id == status_msg.id
                             
                             try:
-                                await self.bot.wait_for('reaction_add', timeout=30.0, check=check)
+                                await self.bot.wait_for('reaction_add', timeout=self.REACTION_WAIT_TIME, check=check)
                                 
                                 # User reacted with thumbs up, automatically check status
                                 await ctx.send(f"👍 **Checking magnet status automatically...**")
@@ -640,7 +637,7 @@ class Download_Commands(commands.Cog):
                                 await self.magnet_check_id(ctx, str(magnet_id))
                                 
                             except asyncio.TimeoutError:
-                                # No reaction within 30 seconds
+                                # No reaction within timeout period
                                 timeout_embed = discord.Embed(
                                     title="⏰ Time's up!",
                                     description="You can check the magnet status manually anytime using:",
@@ -750,7 +747,7 @@ class Download_Commands(commands.Cog):
                         # Status with emoji (case-insensitive comparison)
                         status_lower = magnet_status.lower()
                         status_emoji = "✅" if status_lower == "ready" else "⏳" if status_lower == "downloading" else "❌"
-                        embed.add_field(name="🔄 Status", value=f"{status_emoji} {magnet_status.title()}", inline=True)
+                        embed.add_field(name="🔄 Status: (waiting for seeders)", value=f"{status_emoji} {magnet_status.title()}", inline=True)
                         
                         # Add links if available
                         if magnet_links:
@@ -767,11 +764,11 @@ class Download_Commands(commands.Cog):
                         else:
                             embed.add_field(name="📋 Files", value="No files available yet", inline=False)
                         
-                        # Set footer based on magnet status
+                        # add magnet_check_id command to the embed
                         if status_lower != "ready":
-                            embed.set_footer(text=f"Magnet ID: {magnet_id} | Run `!AD magnet_check_id {magnet_id}` again later to check status")
-                        else:
-                            embed.set_footer(text=f"Magnet ID: {magnet_id}")
+                            embed.add_field(name="🔍 Check Magnet Status", value=f"- Use `!AD magnet_check_id {magnet_id}`\n- Don't complain, use some magnet with many seeders to get a good download :)", inline=False)
+                        # Set footer based on magnet status
+                        embed.set_footer(text=f"Magnet ID: {magnet_id}")
                         await ctx.send(embed=embed)
                         
                         # If magnet is ready, send additional message about next steps
@@ -802,7 +799,7 @@ class Download_Commands(commands.Cog):
                                 inline=False
                             )
                             next_steps_embed.add_field(
-                                name="👍 React with thumbs up (within 30 seconds)",
+                                name=f"👍 React with thumbs up (within {self.REACTION_WAIT_TIME} seconds)",
                                 value="I'll automatically get the file list for you",
                                 inline=False
                             )
@@ -1145,7 +1142,6 @@ class Download_Commands(commands.Cog):
                     
             except Exception as e:
                 error_embed = self._create_error_embed("❌ Error", str(e))
-                print(str(e))
                 await ctx.send(embed=error_embed)
 
     async def _send_link_info_embed(self, ctx: CustomContext, unlock_data: dict, original_link: str, message_to_edit: discord.Message = None):
