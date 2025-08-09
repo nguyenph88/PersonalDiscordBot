@@ -13,8 +13,8 @@ class Download_Commands(commands.Cog):
     # Global wait time for API calls (in seconds)
     API_WAIT_TIME = 5
 
-    # global loop time to run the magnet_check_id command
-    MAGNET_CHECK_ID_LOOP_TIME = 3
+    # global loop time to run the magnet_get_status command
+    MAGNET_GET_STATUS_LOOP_TIME = 3
     
     # Global wait time for user reactions (in seconds)
     REACTION_WAIT_TIME = 15
@@ -218,7 +218,7 @@ class Download_Commands(commands.Cog):
     @commands.group(invoke_without_command=True)
     async def AD(self, ctx: CustomContext):
         """ AllDebrid API commands """
-        await ctx.send("Available commands:\n`!AD status` - Check API authentication\n`!AD download <link>` - Unlock/download a link\n`!AD magnet_upload <magnet_uri>` - Upload magnet link to AllDebrid and get Magnet ID\n`!AD magnet_get <magnet_uri>` - Complete workflow: upload magnet and check status\n`!AD magnet_check_id <magnet_id>` - Check magnet status and information\n`!AD magnet_get_files <magnet_id>` - Get all download files and links\n`!AD supported_host <name>` - Check if a service is supported\n`!AD supported_hosts` - List all supported services\n`!AD history <number>` - Get recent download history")
+        await ctx.send("Available commands:\n`!AD status` - Check API authentication\n`!AD download <link>` - Unlock/download a link\n`!AD magnet_upload <magnet_uri>` - Upload magnet link to AllDebrid and get Magnet ID\n`!AD magnet_get_status <magnet_id>` - Check magnet status and information\n`!AD magnet_get_files <magnet_id>` - Get all download files and links\n`!AD supported_host <name>` - Check if a service is supported\n`!AD supported_hosts` - List all supported services\n`!AD history <number>` - Get recent download history")
 
     @AD.command()
     async def status(self, ctx: CustomContext):
@@ -593,7 +593,7 @@ class Download_Commands(commands.Cog):
                             )
                             combined_embed.add_field(
                                 name="🔍 Check Magnet Status",
-                                value=f"`!AD magnet_check_id {magnet_id}`",
+                                value=f"`!AD magnet_get_status {magnet_id}`",
                                 inline=False
                             )
                             combined_embed.add_field(
@@ -618,7 +618,7 @@ class Download_Commands(commands.Cog):
                             )
                             combined_embed.add_field(
                                 name="⏰ Or wait and check manually",
-                                value=f"Use `!AD magnet_check_id {magnet_id}` when you're ready",
+                                value=f"Use `!AD magnet_get_status {magnet_id}` when you're ready",
                                 inline=False
                             )
                             combined_embed.set_footer(text="The magnet may take some time to process")
@@ -636,8 +636,8 @@ class Download_Commands(commands.Cog):
                                 # User reacted with thumbs up, automatically check status
                                 await ctx.send(f"👍 **Checking magnet status automatically...**")
                                 
-                                # Call the magnet_check_id function
-                                await self.magnet_check_id(ctx, str(magnet_id))
+                                # Call the magnet_get_status function
+                                await self.magnet_get_status(ctx, str(magnet_id))
                                 
                             except asyncio.TimeoutError:
                                 # No reaction within timeout period
@@ -648,7 +648,7 @@ class Download_Commands(commands.Cog):
                                 )
                                 timeout_embed.add_field(
                                     name="🔍 Manual Status Check",
-                                    value=f"`!AD magnet_check_id {magnet_id}`",
+                                    value=f"`!AD magnet_get_status {magnet_id}`",
                                     inline=False
                                 )
                                 await ctx.send(embed=timeout_embed)
@@ -682,7 +682,7 @@ class Download_Commands(commands.Cog):
                 await ctx.send(embed=error_embed)
 
     @AD.command()
-    async def magnet_check_id(self, ctx: CustomContext, magnet_id: str):
+    async def magnet_get_status(self, ctx: CustomContext, magnet_id: str):
         """ Check magnet status and information using Magnet ID """
         if not magnet_id:
             await ctx.send("❌ **Error:** Please provide a magnet ID to check")
@@ -711,7 +711,7 @@ class Download_Commands(commands.Cog):
                 magnet_status = None
                 magnet_data = None
                 
-                for loop_count in range(self.MAGNET_CHECK_ID_LOOP_TIME + 1):
+                for loop_count in range(self.MAGNET_GET_STATUS_LOOP_TIME + 1):
                     # Make POST request to check magnet status
                     response = await self._make_api_request(
                         'https://api.alldebrid.com/v4.1/magnet/status',
@@ -734,13 +734,13 @@ class Download_Commands(commands.Cog):
                                 break
                             
                             # If not ready and not the last loop, wait before next attempt
-                            if loop_count < self.MAGNET_CHECK_ID_LOOP_TIME - 1:
-                                await ctx.send(f"⏳ **Attempt {loop_count + 1}/{self.MAGNET_CHECK_ID_LOOP_TIME}:** Magnet not ready yet. Waiting {self.API_WAIT_TIME} seconds before next check...")
+                            if loop_count < self.MAGNET_GET_STATUS_LOOP_TIME - 1:
+                                await ctx.send(f"⏳ **Attempt {loop_count + 1}/{self.MAGNET_GET_STATUS_LOOP_TIME}:** Magnet not ready yet. Waiting {self.API_WAIT_TIME} seconds before next check...")
                                 await asyncio.sleep(self.API_WAIT_TIME)
 
                             # if last loop, send error message
-                            if loop_count == self.MAGNET_CHECK_ID_LOOP_TIME:
-                                await ctx.send(f"⏳ **Attempt {loop_count}/{self.MAGNET_CHECK_ID_LOOP_TIME}:** Magnet not ready yet. Printing the magnet data...")
+                            if loop_count == self.MAGNET_GET_STATUS_LOOP_TIME:
+                                await ctx.send(f"⏳ **Attempt {loop_count}/{self.MAGNET_GET_STATUS_LOOP_TIME}:** Magnet not ready yet. Printing the magnet data...")
                         else:
                             # Magnet not found, break out of loop
                             break
@@ -795,9 +795,9 @@ class Download_Commands(commands.Cog):
                     else:
                         embed.add_field(name="📋 Files", value="No files available yet", inline=False)
                     
-                    # add magnet_check_id command to the embed
+                    # add magnet_get_status command to the embed
                     if status_lower != "ready":
-                        embed.add_field(name="🔍 Check Magnet Status (again later)", value=f"- Use `!AD magnet_check_id {magnet_id}`\n- Don't complain, use a magnet with many seeders to get a good download :)", inline=False)
+                        embed.add_field(name="🔍 Check Magnet Status (again later)", value=f"- Use `!AD magnet_get_status {magnet_id}`\n- Don't complain, use a magnet with many seeders to get a good download :)", inline=False)
                     # Set footer based on magnet status
                     embed.set_footer(text=f"Magnet ID: {magnet_id}")
                     await ctx.send(embed=embed)
@@ -1033,140 +1033,7 @@ class Download_Commands(commands.Cog):
                 error_embed.add_field(name="🔗 Magnet ID", value=f"`{magnet_id}`", inline=False)
                 await ctx.send(embed=error_embed)
 
-    @AD.command()
-    async def magnet_get(self, ctx: CustomContext, *, magnet_uri: str):
-        """ Complete workflow: upload magnet URI, get ID, check status """
-        if not magnet_uri:
-            await ctx.send("❌ **Error:** Please provide a magnet URI")
-            return
-        
-        magnet_uri = magnet_uri.strip()
-        if not magnet_uri.startswith('magnet:?'):
-            await ctx.send("❌ **Error:** Please provide a valid magnet URI starting with `magnet:?`")
-            return
-        
-        async with ctx.channel.typing():
-            try:
-                api_key = await self._check_api_authentication()
-                headers = {'Authorization': f'Bearer {api_key}'}
-                
-                # Step 1: Upload magnet and get ID
-                upload_data = {'magnets[]': magnet_uri}
-                upload_response = await self._make_api_request(
-                    'https://api.alldebrid.com/v4/magnet/upload',
-                    headers=headers,
-                    method="POST",
-                    data=upload_data
-                )
-                
-                upload_result = upload_response.response
-                if upload_result.get('status') != 'success':
-                    error_msg = upload_result.get('error', {}).get('message', 'Unknown error')
-                    embed = self._create_error_embed("❌ Magnet Upload Failed", f"**Error:** {error_msg}")
-                    embed.add_field(name="🔗 Original Magnet", value=f"```{magnet_uri}```", inline=False)
-                    await ctx.send(embed=embed)
-                    return
 
-                magnet_data = upload_result.get('data', {})
-                magnets = magnet_data.get('magnets', [])
-
-                if not magnets:
-                    embed = self._create_error_embed("❌ Magnet Upload Failed", "No magnet data returned")
-                    embed.add_field(name="🔗 Original Magnet", value=f"```{magnet_uri}```", inline=False)
-                    await ctx.send(embed=embed)
-                    return
-                
-                # The magnets data is a list containing a dictionary
-                magnet_info = magnets[0]  # Get the first magnet from the list
-                magnet_id = magnet_info.get('id')
-                
-                if not magnet_id:
-                    embed = self._create_error_embed("❌ Magnet Upload Failed", "No magnet ID returned")
-                    embed.add_field(name="🔗 Original Magnet", value=f"```{magnet_uri}```", inline=False)
-                    await ctx.send(embed=embed)
-                    return
-                
-                # Step 2: Check magnet status
-                try:
-                    magnet_id_int = int(magnet_id)
-                    status_data = {'id': magnet_id_int}
-                    status_response = await self._make_api_request(
-                        'https://api.alldebrid.com/v4.1/magnet/status',
-                        headers=headers,
-                        method="POST",
-                        data=status_data
-                    )
-                    
-                    status_result = status_response.response
-
-                    if status_result.get('status') == 'success':
-                        magnet_data = status_result.get('data', {}).get('magnets', {})
-                        
-                        if magnet_data:
-                            # Extract magnet information from the correct structure
-                            #magnet_name = magnet_data.get('name', 'Unknown')
-                            magnet_status = magnet_data.get('status', 'Unknown')
-                            magnet_progress = 100 if magnet_status == 'Ready' else 0
-                            
-                            # Get size from the correct field
-                            size_value = magnet_data.get('size')
-                            magnet_size = self._format_file_size(size_value) if size_value else 'Unknown'
-                            
-                            # Get files from the correct structure
-                            files = magnet_data.get('files', [])
-                            magnet_links = []
-                            if files:
-                                for file_group in files:
-                                    if 'e' in file_group:  # 'e' contains the actual files
-                                        magnet_links.extend(file_group['e'])
-                            
-                            # Create embed with magnet information
-                            embed = discord.Embed(
-                                title="🧲 Magnet Status Check",
-                                description=f"**Magnet ID:** `{magnet_id}`",
-                                color=discord.Color.blue()
-                            )
-                            
-                            embed.add_field(name="📏 Size", value=magnet_size, inline=True)
-                            embed.add_field(name="📊 Progress", value=f"{magnet_progress}%", inline=True)
-                            
-                            # Status with emoji (case-insensitive comparison)
-                            status_lower = magnet_status.lower()
-                            status_emoji = "✅" if status_lower == "ready" else "⏳" if status_lower == "downloading" else "❌"
-                            embed.add_field(name="🔄 Status", value=f"{status_emoji} {magnet_status.title()}", inline=True)
-                            
-                            # Add links if available
-                            if magnet_links:
-                                embed.add_field(name="🔗 Links", value=f"{len(magnet_links)} files available", inline=True)
-                                
-                                # Show first few links with download links
-                                if len(magnet_links) <= 5:
-                                    links_display = "\n".join([f"• {link.get('n', 'Unknown')} ({self._format_file_size(link.get('s', 'Unknown'))})\n  🔗 {link.get('l', 'No link available')}" for link in magnet_links])
-                                else:
-                                    links_display = "\n".join([f"• {link.get('n', 'Unknown')} ({self._format_file_size(link.get('s', 'Unknown'))})\n  🔗 {link.get('l', 'No link available')}" for link in magnet_links[:5]])
-                                    links_display += f"\n... and {len(magnet_links) - 5} more files"
-                                
-                                embed.add_field(name="📋 Files", value=links_display, inline=False)
-                            else:
-                                embed.add_field(name="📋 Files", value="No files available yet", inline=False)
-                            
-                            embed.set_footer(text=f"Magnet ID: {magnet_id}")
-                            await ctx.send(embed=embed)
-                        else:
-                            embed = self._create_error_embed("❌ Magnet Not Found", f"No magnet found with ID: `{magnet_id}`")
-                            await ctx.send(embed=embed)
-                    else:
-                        error_msg = status_result.get('error', {}).get('message', 'Unknown error')
-                        embed = self._create_error_embed("❌ Magnet Status Check Failed", f"**Error:** {error_msg}")
-                        embed.add_field(name="🔗 Magnet ID", value=f"`{magnet_id}`", inline=False)
-                        await ctx.send(embed=embed)
-                        
-                except ValueError:
-                    await ctx.send("❌ **Error:** Invalid magnet ID format")
-                    
-            except Exception as e:
-                error_embed = self._create_error_embed("❌ Error", str(e))
-                await ctx.send(embed=error_embed)
 
     async def _send_link_info_embed(self, ctx: CustomContext, unlock_data: dict, original_link: str, message_to_edit: discord.Message = None):
         """Send or edit a message with link information"""
