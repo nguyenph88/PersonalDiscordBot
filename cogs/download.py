@@ -12,6 +12,9 @@ class Download_Commands(commands.Cog):
     
     # Global wait time for API calls (in seconds)
     API_WAIT_TIME = 3
+    
+    # Global wait time for user reactions (in seconds)
+    REACTION_WAIT_TIME = 15
 
     def _get_api_key(self):
         """Get AllDebrid API key from config"""
@@ -770,6 +773,75 @@ class Download_Commands(commands.Cog):
                         else:
                             embed.set_footer(text=f"Magnet ID: {magnet_id}")
                         await ctx.send(embed=embed)
+                        
+                        # If magnet is ready, send additional message about next steps
+                        if status_lower == "ready":
+                            next_steps_embed = discord.Embed(
+                                title="🎉 Magnet Ready for Download!",
+                                description="Your magnet is ready! Here's how to download your files:",
+                                color=discord.Color.green()
+                            )
+                            next_steps_embed.add_field(
+                                name="📁 Step 1: Get Download Links",
+                                value=f"`!AD magnet_get_files {magnet_id}`",
+                                inline=False
+                            )
+                            next_steps_embed.add_field(
+                                name="🔗 Step 2: Download Files",
+                                value="`!AD download <file_link>`\n*(Use the links from Step 1)*",
+                                inline=False
+                            )
+                            next_steps_embed.add_field(
+                                name="💡 Tip",
+                                value="There may be some trash files in the magnet, so check the files before downloading.",
+                                inline=False
+                            )
+                            next_steps_embed.add_field(
+                                name="🤔 Quick File List",
+                                value="Do you want me to get the file list for you?\n*(I'll automatically run the magnet_get_files command)*",
+                                inline=False
+                            )
+                            next_steps_embed.add_field(
+                                name="👍 React with thumbs up (within 30 seconds)",
+                                value="I'll automatically get the file list for you",
+                                inline=False
+                            )
+                            next_steps_embed.add_field(
+                                name="⏰ Or get files manually",
+                                value=f"Use `!AD magnet_get_files {magnet_id}` when you're ready",
+                                inline=False
+                            )
+                            next_steps_embed.set_footer(text="Links will expire in 24 hours")
+                            
+                            files_msg = await ctx.send(embed=next_steps_embed)
+                            await files_msg.add_reaction("👍")
+                            
+                            # Wait for reaction
+                            def check(reaction, user):
+                                return user == ctx.author and str(reaction.emoji) == "👍" and reaction.message.id == files_msg.id
+                            
+                            try:
+                                await self.bot.wait_for('reaction_add', timeout=self.REACTION_WAIT_TIME, check=check)
+                                
+                                # User reacted with thumbs up, automatically get files
+                                await ctx.send(f"👍 **Getting file list automatically...**")
+                                
+                                # Call the magnet_get_files function
+                                await self.magnet_get_files(ctx, str(magnet_id))
+                                
+                            except asyncio.TimeoutError:
+                                # No reaction within timeout period
+                                timeout_embed = discord.Embed(
+                                    title="⏰ Time's up!",
+                                    description="You can get the file list manually anytime using:",
+                                    color=discord.Color.orange()
+                                )
+                                timeout_embed.add_field(
+                                    name="📁 Manual File List",
+                                    value=f"`!AD magnet_get_files {magnet_id}`",
+                                    inline=False
+                                )
+                                await ctx.send(embed=timeout_embed)
                     else:
                         embed = self._create_error_embed(
                             "❌ Magnet Not Found",
