@@ -948,7 +948,7 @@ class Download_Commands(commands.Cog):
                             # Send additional message with download instructions
                             download_instructions_embed = discord.Embed(
                                 title="🔗 Download Instructions",
-                                description="To request directdownload any of these files, copy the link and use the download command:",
+                                description="To request direct download links for any of these files, use the commands below:",
                                 color=discord.Color.blue()
                             )
                             
@@ -957,7 +957,7 @@ class Download_Commands(commands.Cog):
 
                             download_instructions_embed.add_field(
                                 name="💡 How to Download",
-                                value="1. Copy any of the download links above\n2. Use the command: `!AD download <paste_link_here>`\n3. The bot will provide you with a direct download link",
+                                value="1. Click on any command below to copy it\n2. Paste it in the chat and press Enter\n3. The bot will provide you with a direct download link",
                                 inline=False
                             )
 
@@ -979,7 +979,7 @@ class Download_Commands(commands.Cog):
                         
                             download_instructions_embed.add_field(
                                 name="⚠️ Important Notes",
-                                value="• Links will expire in 24 hours\n• You can download files one at a time\n• Some files in the magnet are trash, or virus, DO NOT download them. Use your own judgement.'",
+                                value="• Links will expire in 24 hours\n• You can download files one at a time\n• Some files in the magnet are trash or virus files - use your own judgement\n• Commands are in code blocks for easy copying",
                                 inline=False
                             )
                             
