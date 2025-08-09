@@ -9,6 +9,9 @@ import asyncio
 class Download_Commands(commands.Cog):
     def __init__(self, bot):
         self.bot: DiscordBot = bot
+    
+    # Global wait time for API calls (in seconds)
+    API_WAIT_TIME = 3
 
     def _get_api_key(self):
         """Get AllDebrid API key from config"""
@@ -540,6 +543,34 @@ class Download_Commands(commands.Cog):
                         magnet_size = self._format_file_size(size_value) if size_value else 'Unknown'
                         
                         if magnet_id:
+                            # Wait for API to process the magnet
+                            await ctx.send(f"⏳ **Processing magnet...** Please wait {self.API_WAIT_TIME} seconds for the API to return updated information.")
+                            await asyncio.sleep(self.API_WAIT_TIME)
+                            
+                            # Make a second API call to get updated information
+                            try:
+                                magnet_id_int = int(magnet_id)
+                                status_data = {'id': magnet_id_int}
+                                status_response = await self._make_api_request(
+                                    'https://api.alldebrid.com/v4.1/magnet/status',
+                                    headers=headers,
+                                    method="POST",
+                                    data=status_data
+                                )
+                                
+                                status_result = status_response.response
+                                if status_result.get('status') == 'success':
+                                    updated_magnet_data = status_result.get('data', {}).get('magnets', {})
+                                    if updated_magnet_data:
+                                        # Use updated information
+                                        magnet_name = updated_magnet_data.get('name', magnet_name)
+                                        size_value = updated_magnet_data.get('size', size_value)
+                                        magnet_size = self._format_file_size(size_value) if size_value else 'Unknown'
+                            except Exception as e:
+                                # If second API call fails, continue with original data
+                                print(f"Warning: Could not get updated magnet info: {e}")
+                            
+                            # Now display the information (either updated or original)
                             embed = self._create_success_embed(
                                 "🧲 Magnet Uploaded Successfully!",
                                 f"**Magnet uploaded to AllDebrid**"
