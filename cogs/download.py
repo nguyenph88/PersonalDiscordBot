@@ -944,6 +944,47 @@ class Download_Commands(commands.Cog):
                             
                             embed.set_footer(text=f"Magnet ID: {magnet_id}")
                             await ctx.send(embed=embed)
+                            
+                            # Send additional message with download instructions
+                            download_instructions_embed = discord.Embed(
+                                title="🔗 Download Instructions",
+                                description="To request directdownload any of these files, copy the link and use the download command:",
+                                color=discord.Color.blue()
+                            )
+                            
+                            # Create download commands for each file
+                            download_commands = ""
+
+                            download_instructions_embed.add_field(
+                                name="💡 How to Download",
+                                value="1. Copy any of the download links above\n2. Use the command: `!AD download <paste_link_here>`\n3. The bot will provide you with a direct download link",
+                                inline=False
+                            )
+
+                            for i, link in enumerate(magnet_links, 1):
+                                file_name = link.get('n', 'Unknown')
+                                download_link = link.get('l', 'No link available')
+                                
+                                # Truncate long filenames for display
+                                display_name = self._truncate_text(file_name, 100)
+                                
+                                download_commands += f"**{i}.** `!AD download {download_link}`\n"
+                                download_commands += f"   📁 File: {display_name}\n\n"
+                            
+                            download_instructions_embed.add_field(
+                                name="📋 Download Commands",
+                                value=download_commands,
+                                inline=False
+                            )
+                        
+                            download_instructions_embed.add_field(
+                                name="⚠️ Important Notes",
+                                value="• Links will expire in 24 hours\n• You can download files one at a time\n• Some files in the magnet are trash, or virus, DO NOT download them. Use your own judgement.'",
+                                inline=False
+                            )
+                            
+                            download_instructions_embed.set_footer(text=f"Magnet ID: {magnet_id} | Total Files: {len(magnet_links)}")
+                            await ctx.send(embed=download_instructions_embed)
                         else:
                             embed = self._create_error_embed(
                                 "❌ No Files Available",
