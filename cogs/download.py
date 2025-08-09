@@ -550,6 +550,30 @@ class Download_Commands(commands.Cog):
                              
                              embed.set_footer(text="Use this Magnet ID for further operations")
                              await ctx.send(embed=embed)
+                             
+                             # Send follow-up message with next steps
+                             next_steps_embed = discord.Embed(
+                                 title="📋 Next Steps",
+                                 description="To check the status of your uploaded magnet, use the following command:",
+                                 color=discord.Color.blue()
+                             )
+                             next_steps_embed.add_field(
+                                 name="🔍 Check Magnet Status",
+                                 value=f"`!AD magnet_check_id {magnet_id}`",
+                                 inline=False
+                             )
+                             next_steps_embed.add_field(
+                                 name="📁 Get Files to Download (when ready)",
+                                 value=f"`!AD magnet_get_files {magnet_id}`",
+                                 inline=False
+                             )
+                             next_steps_embed.add_field(
+                                 name="🔗 Request Direct File Download (when ready)",
+                                 value=f"`!AD download <file_link>`",
+                                 inline=False
+                             )
+                             next_steps_embed.set_footer(text="The magnet may take some time to process")
+                             await ctx.send(embed=next_steps_embed)
                          else:
                             embed = self._create_error_embed(
                                 "❌ Magnet Upload Failed",
