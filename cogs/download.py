@@ -209,7 +209,7 @@ class Download_Commands(commands.Cog):
     @commands.group(invoke_without_command=True)
     async def AD(self, ctx: CustomContext):
         """ AllDebrid API commands """
-        await ctx.send("Available commands:\n`!AD status` - Check API authentication\n`!AD download <link>` - Unlock/download a link\n`!AD magnet_upload <magnet_uri>` - Upload magnet link to AllDebrid and get Magnet ID\n`!AD magnet_check_id <magnet_id>` - Check magnet status and information\n`!AD magnet_get_files <magnet_id>` - Get all download files and links\n`!AD supported_host <name>` - Check if a service is supported\n`!AD supported_hosts` - List all supported services\n`!AD history <number>` - Get recent download history")
+        await ctx.send("Available commands:\n`!AD status` - Check API authentication\n`!AD download <link>` - Unlock/download a link\n`!AD magnet_upload <magnet_uri>` - Upload magnet link to AllDebrid and get Magnet ID\n`!AD magnet_get <magnet_uri>` - Complete workflow: upload magnet and check status\n`!AD magnet_check_id <magnet_id>` - Check magnet status and information\n`!AD magnet_get_files <magnet_id>` - Get all download files and links\n`!AD supported_host <name>` - Check if a service is supported\n`!AD supported_hosts` - List all supported services\n`!AD history <number>` - Get recent download history")
 
     @AD.command()
     async def status(self, ctx: CustomContext):
@@ -524,13 +524,16 @@ class Download_Commands(commands.Cog):
                 if data.get('status') == 'success':
                     magnet_data = data.get('data', {})
                     magnets = magnet_data.get('magnets', [])
+
+                    print(magnets) ################
+                    print(magnet_data) ################
                     
                     if magnets:
                          # The magnets data is actually a dictionary, not a list
-                         magnet_info = magnets  # Get the magnet data directly
+                         magnet_info = magnets[0]  # Get the magnet data directly
                          
                          magnet_id = magnet_info.get('id')
-                         magnet_name = magnet_info.get('filename', 'Unknown')  # Use 'filename' instead of 'name'
+                         magnet_name = magnet_info.get('name', 'Unknown')  # Use 'filename' instead of 'name'
                          
                          # Get size from the correct field
                          size_value = magnet_info.get('size')
@@ -544,7 +547,6 @@ class Download_Commands(commands.Cog):
                              embed.add_field(name="🔗 Magnet ID", value=f"`{magnet_id}`", inline=True)
                              embed.add_field(name="📁 Name", value=magnet_name, inline=True)
                              embed.add_field(name="📏 Size", value=magnet_size, inline=True)
-                             embed.add_field(name="🔗 Original Magnet", value=f"```{magnet_uri}```", inline=False)
                              
                              embed.set_footer(text="Use this Magnet ID for further operations")
                              await ctx.send(embed=embed)
@@ -599,7 +601,7 @@ class Download_Commands(commands.Cog):
                 # Convert magnet_id to integer array as required by API
                 try:
                     magnet_id_int = int(magnet_id)
-                    data = {'id[]': [magnet_id_int]}
+                    data = {'id': magnet_id_int}
                 except ValueError:
                     await ctx.send("❌ **Error:** Magnet ID must be a valid number")
                     return
@@ -794,6 +796,142 @@ class Download_Commands(commands.Cog):
             except Exception as e:
                 error_embed = self._create_error_embed("❌ Error", str(e))
                 error_embed.add_field(name="🔗 Magnet ID", value=f"`{magnet_id}`", inline=False)
+                await ctx.send(embed=error_embed)
+
+    @AD.command()
+    async def magnet_get(self, ctx: CustomContext, *, magnet_uri: str):
+        """ Complete workflow: upload magnet URI, get ID, check status """
+        if not magnet_uri:
+            await ctx.send("❌ **Error:** Please provide a magnet URI")
+            return
+        
+        magnet_uri = magnet_uri.strip()
+        if not magnet_uri.startswith('magnet:?'):
+            await ctx.send("❌ **Error:** Please provide a valid magnet URI starting with `magnet:?`")
+            return
+        
+        async with ctx.channel.typing():
+            try:
+                api_key = await self._check_api_authentication()
+                headers = {'Authorization': f'Bearer {api_key}'}
+                
+                # Step 1: Upload magnet and get ID
+                upload_data = {'magnets[]': magnet_uri}
+                upload_response = await self._make_api_request(
+                    'https://api.alldebrid.com/v4/magnet/upload',
+                    headers=headers,
+                    method="POST",
+                    data=upload_data
+                )
+                
+                upload_result = upload_response.response
+                if upload_result.get('status') != 'success':
+                    error_msg = upload_result.get('error', {}).get('message', 'Unknown error')
+                    embed = self._create_error_embed("❌ Magnet Upload Failed", f"**Error:** {error_msg}")
+                    embed.add_field(name="🔗 Original Magnet", value=f"```{magnet_uri}```", inline=False)
+                    await ctx.send(embed=embed)
+                    return
+
+                magnet_data = upload_result.get('data', {})
+                magnets = magnet_data.get('magnets', [])
+
+                if not magnets:
+                    embed = self._create_error_embed("❌ Magnet Upload Failed", "No magnet data returned")
+                    embed.add_field(name="🔗 Original Magnet", value=f"```{magnet_uri}```", inline=False)
+                    await ctx.send(embed=embed)
+                    return
+                
+                # The magnets data is a list containing a dictionary
+                magnet_info = magnets[0]  # Get the first magnet from the list
+                magnet_id = magnet_info.get('id')
+                
+                if not magnet_id:
+                    embed = self._create_error_embed("❌ Magnet Upload Failed", "No magnet ID returned")
+                    embed.add_field(name="🔗 Original Magnet", value=f"```{magnet_uri}```", inline=False)
+                    await ctx.send(embed=embed)
+                    return
+                
+                # Step 2: Check magnet status
+                try:
+                    magnet_id_int = int(magnet_id)
+                    status_data = {'id': magnet_id_int}
+                    status_response = await self._make_api_request(
+                        'https://api.alldebrid.com/v4.1/magnet/status',
+                        headers=headers,
+                        method="POST",
+                        data=status_data
+                    )
+                    
+                    status_result = status_response.response
+
+                    if status_result.get('status') == 'success':
+                        magnet_data = status_result.get('data', {}).get('magnets', {})
+                        
+                        if magnet_data:
+                            # Extract magnet information from the correct structure
+                            #magnet_name = magnet_data.get('name', 'Unknown')
+                            magnet_status = magnet_data.get('status', 'Unknown')
+                            magnet_progress = 100 if magnet_status == 'Ready' else 0
+                            
+                            # Get size from the correct field
+                            size_value = magnet_data.get('size')
+                            magnet_size = self._format_file_size(size_value) if size_value else 'Unknown'
+                            
+                            # Get files from the correct structure
+                            files = magnet_data.get('files', [])
+                            magnet_links = []
+                            if files:
+                                for file_group in files:
+                                    if 'e' in file_group:  # 'e' contains the actual files
+                                        magnet_links.extend(file_group['e'])
+                            
+                            # Create embed with magnet information
+                            embed = discord.Embed(
+                                title="🧲 Magnet Status Check",
+                                description=f"**Magnet ID:** `{magnet_id}`",
+                                color=discord.Color.blue()
+                            )
+                            
+                            embed.add_field(name="📏 Size", value=magnet_size, inline=True)
+                            embed.add_field(name="📊 Progress", value=f"{magnet_progress}%", inline=True)
+                            
+                            # Status with emoji (case-insensitive comparison)
+                            status_lower = magnet_status.lower()
+                            status_emoji = "✅" if status_lower == "ready" else "⏳" if status_lower == "downloading" else "❌"
+                            embed.add_field(name="🔄 Status", value=f"{status_emoji} {magnet_status.title()}", inline=True)
+                            
+                            # Add links if available
+                            if magnet_links:
+                                embed.add_field(name="🔗 Links", value=f"{len(magnet_links)} files available", inline=True)
+                                
+                                # Show first few links with download links
+                                if len(magnet_links) <= 5:
+                                    links_display = "\n".join([f"• {link.get('n', 'Unknown')} ({self._format_file_size(link.get('s', 'Unknown'))})\n  🔗 {link.get('l', 'No link available')}" for link in magnet_links])
+                                else:
+                                    links_display = "\n".join([f"• {link.get('n', 'Unknown')} ({self._format_file_size(link.get('s', 'Unknown'))})\n  🔗 {link.get('l', 'No link available')}" for link in magnet_links[:5]])
+                                    links_display += f"\n... and {len(magnet_links) - 5} more files"
+                                
+                                embed.add_field(name="📋 Files", value=links_display, inline=False)
+                            else:
+                                embed.add_field(name="📋 Files", value="No files available yet", inline=False)
+                            
+                            embed.set_footer(text=f"Magnet ID: {magnet_id}")
+                            await ctx.send(embed=embed)
+                        else:
+                            embed = self._create_error_embed("❌ Magnet Not Found", f"No magnet found with ID: `{magnet_id}`")
+                            await ctx.send(embed=embed)
+                    else:
+                        error_msg = status_result.get('error', {}).get('message', 'Unknown error')
+                        embed = self._create_error_embed("❌ Magnet Status Check Failed", f"**Error:** {error_msg}")
+                        embed.add_field(name="🔗 Magnet ID", value=f"`{magnet_id}`", inline=False)
+                        await ctx.send(embed=embed)
+                        
+                except ValueError:
+                    await ctx.send("❌ **Error:** Invalid magnet ID format")
+                    
+            except Exception as e:
+                error_embed = self._create_error_embed("❌ Error", str(e))
+                print(str(e))
                 await ctx.send(embed=error_embed)
 
     async def _send_link_info_embed(self, ctx: CustomContext, unlock_data: dict, original_link: str, message_to_edit: discord.Message = None):
