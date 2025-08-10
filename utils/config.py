@@ -21,6 +21,10 @@ class Config:
     
     # AllDebrid API configuration
     alldebrid_api_key: str = None
+    
+    # Channel management configuration
+    request_channel_name: str = None
+    request_channel_purge_hours: int = None
 
     @classmethod
     def from_dict(self, **kwargs) -> "Config":
@@ -28,7 +32,13 @@ class Config:
         kwargs_overwrite = {}
 
         for k, v in kwargs.items():
-            new_key = k.lower()
+            # Convert environment variable names to dataclass field names
+            if k == "REQUEST_CHANNEL_NAME":
+                new_key = "request_channel_name"
+            elif k == "REQUEST_CHANNEL_PURGE_HOURS":
+                new_key = "request_channel_purge_hours"
+            else:
+                new_key = k.lower()
 
             if v.isdigit():
                 kwargs_overwrite[new_key] = int(v)
@@ -44,7 +54,7 @@ class Config:
         if not os.path.exists(filename):
             print(f"Warning: {filename} file not found. Please create it with the required environment variables.")
             print("Required variables: DISCORD_TOKEN, DISCORD_PREFIX, DISCORD_OWNER_ID, DISCORD_JOIN_MESSAGE, DISCORD_ACTIVITY_NAME, DISCORD_ACTIVITY_TYPE, DISCORD_STATUS_TYPE")
-            print("Optional variables: ALLDEBRID_API_KEY")
+            print("Optional variables: ALLDEBRID_API_KEY, REQUEST_CHANNEL_NAME, REQUEST_CHANNEL_PURGE_HOURS")
             raise FileNotFoundError(f"{filename} file not found. Please create it with the required environment variables.")
         
         return Config.from_dict(**dotenv_values(filename))

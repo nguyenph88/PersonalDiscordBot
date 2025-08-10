@@ -7,6 +7,10 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import asyncio
+import datetime
+import pytz
+import threading
+import time
 
 
 class Download_Commands(commands.Cog):
@@ -21,6 +25,9 @@ class Download_Commands(commands.Cog):
     
     # Global wait time for user reactions (in seconds)
     REACTION_WAIT_TIME = 15
+
+    # Global wait time between each message delete while purging channel
+    MESSAGE_DELETE_WAIT_TIME = 1
 
     def _get_api_key(self):
         """Get AllDebrid API key from config"""
@@ -1270,6 +1277,350 @@ class Download_Commands(commands.Cog):
                 error_embed.add_field(name="🔗 URL", value=f"```{url}```", inline=False)
                 await search_msg.edit(content="❌ **Search failed**", embed=error_embed)
 
+    @AD.command()
+    async def purge(self, ctx: CustomContext):
+        """Show channel purge information and allow manual purging"""
+        try:
+            # Check if channel purging is configured
+            if not self.bot.config.request_channel_name or not self.bot.config.request_channel_purge_hours:
+                embed = self._create_error_embed(
+                    "❌ Channel Purging Not Configured",
+                    "Channel purging is not configured. Please set `REQUEST_CHANNEL_NAME` and `REQUEST_CHANNEL_PURGE_HOURS` in your `.env` file.",
+                    "Configuration Missing"
+                )
+                await ctx.send(embed=embed)
+                return
+
+            # Validate purge hours
+            valid_hours = [1, 2, 3, 4, 6, 12]
+            if self.bot.config.request_channel_purge_hours not in valid_hours:
+                embed = self._create_error_embed(
+                    "❌ Invalid Purge Configuration",
+                    f"`REQUEST_CHANNEL_PURGE_HOURS` must be one of {valid_hours}. Current value: {self.bot.config.request_channel_purge_hours}",
+                    "Configuration Error"
+                )
+                await ctx.send(embed=embed)
+                return
+
+            # Find the channel
+            channel = None
+            for guild in self.bot.guilds:
+                channel = discord.utils.get(guild.text_channels, name=self.bot.config.request_channel_name)
+                if channel:
+                    break
+
+            if not channel:
+                embed = self._create_error_embed(
+                    "❌ Channel Not Found",
+                    f"Channel `#{self.bot.config.request_channel_name}` not found in any guild.",
+                    "Channel Missing"
+                )
+                await ctx.send(embed=embed)
+                return
+
+            # Calculate next purge time
+            pdt_tz = pytz.timezone('US/Pacific')
+            now = datetime.datetime.now(pdt_tz)
+            
+            # Calculate next purge time (midnight + purge interval)
+            next_purge = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            # If we're past midnight today, move to next interval
+            while next_purge <= now:
+                next_purge += datetime.timedelta(hours=self.bot.config.request_channel_purge_hours)
+            
+            # Calculate time until next purge
+            time_until_purge = next_purge - now
+            hours_until_purge = time_until_purge.total_seconds() / 3600
+
+            # Create information embed
+            embed = discord.Embed(
+                title="🧹 Channel Purge Information",
+                description=f"Information about automatic channel purging for `#{self.bot.config.request_channel_name}`",
+                color=discord.Color.blue()
+            )
+
+            embed.add_field(
+                name="📺 Channel",
+                value=f"`#{self.bot.config.request_channel_name}`",
+                inline=True
+            )
+
+            embed.add_field(
+                name="⏰ Purge Interval",
+                value=f"Every **{self.bot.config.request_channel_purge_hours}** hours",
+                inline=True
+            )
+
+            embed.add_field(
+                name="🕐 Next Scheduled Purge",
+                value=f"<t:{int(next_purge.timestamp())}:F>\n(<t:{int(next_purge.timestamp())}:R>)",
+                inline=False
+            )
+
+            embed.add_field(
+                name="⏳ Time Remaining",
+                value=f"**{hours_until_purge:.1f}** hours until next purge",
+                inline=True
+            )
+
+            embed.add_field(
+                name="💡 Manual Purge",
+                value="React with 👍 to purge the channel immediately",
+                inline=True
+            )
+
+            embed.set_footer(text="Channel purging starts at midnight PDT and follows the configured interval")
+
+            # Send the embed and add reaction
+            message = await ctx.send(embed=embed)
+            await message.add_reaction("👍")
+
+            # Wait for user reaction
+            try:
+                def check(reaction, user):
+                    return (
+                        user == ctx.author and
+                        reaction.message.id == message.id and
+                        str(reaction.emoji) == "👍"
+                    )
+
+                await self.bot.wait_for('reaction_add', timeout=self.REACTION_WAIT_TIME, check=check)
+
+                # User confirmed, proceed with purge
+                await self._purge_channel()
+
+                # Send confirmation to the user
+                confirm_embed = discord.Embed(
+                    title="✅ Channel Purged",
+                    description=f"Successfully purged `#{self.bot.config.request_channel_name}` as requested.",
+                    color=discord.Color.green()
+                )
+                confirm_embed.add_field(
+                    name="⏰ Next Scheduled Purge",
+                    value=f"<t:{int(next_purge.timestamp())}:R>",
+                    inline=True
+                )
+                await ctx.send(embed=confirm_embed)
+
+            except asyncio.TimeoutError:
+                # User didn't react in time
+                timeout_embed = discord.Embed(
+                    title="⏰ Timeout",
+                    description="No response received. Channel will be purged automatically at the scheduled time.",
+                    color=discord.Color.orange()
+                )
+                await message.edit(embed=timeout_embed)
+
+        except Exception as e:
+            embed = self._create_error_embed(
+                "❌ Error",
+                f"An error occurred while getting purge information: {str(e)}",
+                type(e).__name__
+            )
+            await ctx.send(embed=embed)
+
+    async def _start_channel_purge_scheduler(self):
+        """Start the channel purge scheduler in a separate thread"""
+        if not self.bot.config.request_channel_name or not self.bot.config.request_channel_purge_hours:
+            return
+        
+        # Validate purge hours
+        valid_hours = [1, 2, 3, 4, 6, 12]
+        if self.bot.config.request_channel_purge_hours not in valid_hours:
+            print(f"Warning: REQUEST_CHANNEL_PURGE_HOURS must be one of {valid_hours}. Current value: {self.bot.config.request_channel_purge_hours}")
+            return
+        
+        # Start scheduler in a separate thread
+        thread = threading.Thread(target=self._channel_purge_scheduler, daemon=True)
+        thread.start()
+        print(f"✅ Channel purge scheduler started for channel '{self.bot.config.request_channel_name}' every {self.bot.config.request_channel_purge_hours} hours")
+
+    def _channel_purge_scheduler(self):
+        """Background thread for channel purging"""
+        pdt_tz = pytz.timezone('US/Pacific')
+        
+        while True:
+            try:
+                # Get current time in PDT
+                now = datetime.datetime.now(pdt_tz)
+                
+                # Calculate next purge time (midnight + purge interval)
+                next_purge = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                
+                # If we're past midnight today, move to next interval
+                while next_purge <= now:
+                    next_purge += datetime.timedelta(hours=self.bot.config.request_channel_purge_hours)
+                
+                # Calculate time until next purge
+                time_until_purge = (next_purge - now).total_seconds()
+                
+                print(f"🕐 Next channel purge scheduled for {next_purge.strftime('%Y-%m-%d %H:%M:%S')} PDT (in {time_until_purge/3600:.1f} hours)")
+                
+                # Sleep until next purge time
+                time.sleep(time_until_purge)
+                
+                # Execute purge
+                asyncio.run_coroutine_threadsafe(self._purge_channel(), self.bot.loop)
+                
+            except Exception as e:
+                print(f"❌ Error in channel purge scheduler: {e}")
+                time.sleep(60)  # Wait 1 minute before retrying
+
+    async def _purge_channel(self):
+        """Purge all messages from the request channel"""
+        try:
+            channel_name = self.bot.config.request_channel_name
+            if not channel_name:
+                return
+            
+            # Find the channel
+            channel = None
+            for guild in self.bot.guilds:
+                channel = discord.utils.get(guild.text_channels, name=channel_name)
+                if channel:
+                    break
+            
+            if not channel:
+                print(f"❌ Channel '{channel_name}' not found")
+                return
+            
+            # Check if bot has permission to manage messages
+            if not channel.permissions_for(channel.guild.me).manage_messages:
+                print(f"❌ Bot doesn't have permission to manage messages in channel '{channel_name}'")
+                return
+            
+            # Delete all messages
+            deleted_count = 0
+            async for message in channel.history(limit=None):
+                try:
+                    await message.delete()
+                    deleted_count += 1
+                    await asyncio.sleep(self.MESSAGE_DELETE_WAIT_TIME)  # Rate limiting
+                except Exception as e:
+                    print(f"❌ Failed to delete message {message.id}: {e}")
+            
+            # Send purge confirmation
+            embed = discord.Embed(
+                title="🧹 Channel Purged",
+                description=f"Successfully deleted **{deleted_count}** messages from the channel",
+                color=discord.Color.blue()
+            )
+            embed.add_field(
+                name="⏰ Next Purge",
+                value=f"<t:{int((datetime.datetime.now(pytz.timezone('US/Pacific')) + datetime.timedelta(hours=self.bot.config.request_channel_purge_hours)).timestamp())}:R>",
+                inline=True
+            )
+            embed.set_footer(text=f"Auto-purge every {self.bot.config.request_channel_purge_hours} hours")
+            
+            await channel.send(embed=embed)
+            print(f"✅ Purged {deleted_count} messages from channel '{channel_name}'")
+            
+        except Exception as e:
+            print(f"❌ Error purging channel: {e}")
+
+    async def _send_purge_reminder(self, hours_left: int):
+        """Send a reminder about upcoming channel purge"""
+        try:
+            channel_name = self.bot.config.request_channel_name
+            if not channel_name:
+                return
+            
+            # Find the channel
+            channel = None
+            for guild in self.bot.guilds:
+                channel = discord.utils.get(guild.text_channels, name=channel_name)
+                if channel:
+                    break
+            
+            if not channel:
+                return
+            
+            # Determine reminder frequency
+            if hours_left == 1:
+                # Send reminder every 15 minutes for the last hour
+                reminder_text = "⚠️ **Channel will be purged in 1 hour!**"
+                color = discord.Color.red()
+            else:
+                # Send hourly reminder
+                reminder_text = f"⏰ **Channel will be purged in {hours_left} hours**"
+                color = discord.Color.orange()
+            
+            embed = discord.Embed(
+                title="🕐 Purge Reminder",
+                description=reminder_text,
+                color=color
+            )
+            
+            if hours_left == 1:
+                embed.add_field(
+                    name="📢 Reminder Frequency",
+                    value="You'll receive a reminder every 15 minutes until purge",
+                    inline=False
+                )
+            
+            embed.add_field(
+                name="💡 Save Important Info",
+                value="Make sure to save any important information before the purge",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"Auto-purge every {self.bot.config.request_channel_purge_hours} hours")
+            
+            await channel.send(embed=embed)
+            
+        except Exception as e:
+            print(f"❌ Error sending purge reminder: {e}")
+
+    async def _start_reminder_scheduler(self):
+        """Start the reminder scheduler in a separate thread"""
+        if not self.bot.config.request_channel_name or not self.bot.config.request_channel_purge_hours:
+            return
+        
+        # Start reminder scheduler in a separate thread
+        thread = threading.Thread(target=self._reminder_scheduler, daemon=True)
+        thread.start()
+        print(f"✅ Reminder scheduler started for channel '{self.bot.config.request_channel_name}'")
+
+    def _reminder_scheduler(self):
+        """Background thread for sending purge reminders"""
+        pdt_tz = pytz.timezone('US/Pacific')
+        
+        while True:
+            try:
+                # Get current time in PDT
+                now = datetime.datetime.now(pdt_tz)
+                
+                # Calculate next purge time
+                next_purge = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                while next_purge <= now:
+                    next_purge += datetime.timedelta(hours=self.bot.config.request_channel_purge_hours)
+                
+                # Calculate hours until next purge
+                hours_until_purge = int((next_purge - now).total_seconds() / 3600)
+                
+                # Send reminders based on time remaining
+                if hours_until_purge == 1:
+                    # Send reminder every 15 minutes for the last hour
+                    asyncio.run_coroutine_threadsafe(self._send_purge_reminder(1), self.bot.loop)
+                    time.sleep(15 * 60)  # Wait 15 minutes
+                elif hours_until_purge <= 12:
+                    # Send hourly reminder
+                    asyncio.run_coroutine_threadsafe(self._send_purge_reminder(hours_until_purge), self.bot.loop)
+                    time.sleep(60 * 60)  # Wait 1 hour
+                else:
+                    # Sleep for a longer period
+                    time.sleep(60 * 60)  # Wait 1 hour
+                
+            except Exception as e:
+                print(f"❌ Error in reminder scheduler: {e}")
+                time.sleep(60)  # Wait 1 minute before retrying
+
 
 async def setup(bot):
-    await bot.add_cog(Download_Commands(bot))
+    cog = Download_Commands(bot)
+    await bot.add_cog(cog)
+    
+    # Start channel purge and reminder schedulers
+    await cog._start_channel_purge_scheduler()
+    await cog._start_reminder_scheduler()

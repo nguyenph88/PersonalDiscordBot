@@ -25,6 +25,10 @@ DISCORD_STATUS_TYPE=online
 
 # AllDebrid API Configuration (Optional)
 ALLDEBRID_API_KEY=your_alldebrid_api_key_here
+
+# Channel Management Configuration (Optional)
+REQUEST_CHANNEL_NAME=your_channel_name_here
+REQUEST_CHANNEL_PURGE_HOURS=6
 """
     
     try:
@@ -35,6 +39,8 @@ ALLDEBRID_API_KEY=your_alldebrid_api_key_here
         print("   - DISCORD_TOKEN: Your Discord bot token")
         print("   - DISCORD_OWNER_ID: Your Discord user ID")
         print("   - ALLDEBRID_API_KEY: Your AllDebrid API key (optional)")
+        print("   - REQUEST_CHANNEL_NAME: Channel name for bot commands (optional)")
+        print("   - REQUEST_CHANNEL_PURGE_HOURS: Hours between channel purges (1,2,3,4,6,12) (optional)")
     except Exception as e:
         print(f"❌ Error creating .env file: {e}")
 

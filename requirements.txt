@@ -3,3 +3,4 @@ psutil
 python-dotenv
 requests
 beautifulsoup4
+pytz
