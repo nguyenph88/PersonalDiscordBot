@@ -1302,17 +1302,13 @@ class Download_Commands(commands.Cog):
                 await ctx.send(embed=embed)
                 return
 
-            # Find the channel
-            channel = None
-            for guild in self.bot.guilds:
-                channel = discord.utils.get(guild.text_channels, name=self.bot.config.request_channel_name)
-                if channel:
-                    break
+            # Find the channel in the current guild
+            channel = discord.utils.get(ctx.guild.text_channels, name=self.bot.config.request_channel_name)
 
             if not channel:
                 embed = self._create_error_embed(
                     "❌ Channel Not Found",
-                    f"Channel `#{self.bot.config.request_channel_name}` not found in any guild.",
+                    f"Channel `#{self.bot.config.request_channel_name}` not found in this server.",
                     "Channel Missing"
                 )
                 await ctx.send(embed=embed)
@@ -1417,12 +1413,12 @@ class Download_Commands(commands.Cog):
                 await self.bot.wait_for('reaction_add', timeout=self.REACTION_WAIT_TIME, check=check)
 
                 # User confirmed, proceed with purge
-                await self._purge_channel()
+                await self._purge_channel(target_guild=ctx.guild)
 
                 # Send confirmation to the user
                 confirm_embed = discord.Embed(
                     title="✅ Channel Purged",
-                    description=f"Successfully purged `#{self.bot.config.request_channel_name}` as requested.",
+                    description=f"Successfully purged `#{self.bot.config.request_channel_name}` in this server as requested.",
                     color=discord.Color.green()
                 )
                 
@@ -1510,14 +1506,14 @@ class Download_Commands(commands.Cog):
                 # Sleep until next purge time
                 time.sleep(time_until_purge)
                 
-                # Execute purge
-                asyncio.run_coroutine_threadsafe(self._purge_channel(), self.bot.loop)
+                # Execute purge for all guilds
+                asyncio.run_coroutine_threadsafe(self._purge_channel_all_guilds(), self.bot.loop)
                 
             except Exception as e:
                 print(f"❌ Error in channel purge scheduler: {e}")
                 time.sleep(60)  # Wait 1 minute before retrying
 
-    async def _purge_channel(self):
+    async def _purge_channel(self, target_guild=None):
         """Purge all messages from the request channel"""
         try:
             channel_name = self.bot.config.request_channel_name
@@ -1526,10 +1522,15 @@ class Download_Commands(commands.Cog):
             
             # Find the channel
             channel = None
-            for guild in self.bot.guilds:
-                channel = discord.utils.get(guild.text_channels, name=channel_name)
-                if channel:
-                    break
+            if target_guild:
+                # Purge specific guild's channel
+                channel = discord.utils.get(target_guild.text_channels, name=channel_name)
+            else:
+                # Purge all guilds' channels (for automatic purging)
+                for guild in self.bot.guilds:
+                    channel = discord.utils.get(guild.text_channels, name=channel_name)
+                    if channel:
+                        break
             
             if not channel:
                 print(f"❌ Channel '{channel_name}' not found")
@@ -1569,7 +1570,71 @@ class Download_Commands(commands.Cog):
         except Exception as e:
             print(f"❌ Error purging channel: {e}")
 
-    async def _send_purge_reminder(self, hours_left: int):
+    async def _purge_channel_all_guilds(self):
+        """Purge all messages from the request channel in all guilds"""
+        try:
+            channel_name = self.bot.config.request_channel_name
+            if not channel_name:
+                return
+            
+            # Find all guilds that have the channel
+            guilds_with_channel = []
+            for guild in self.bot.guilds:
+                channel = discord.utils.get(guild.text_channels, name=channel_name)
+                if channel:
+                    guilds_with_channel.append((guild, channel))
+            
+            if not guilds_with_channel:
+                print(f"❌ Channel '{channel_name}' not found in any guild")
+                return
+            
+            total_deleted = 0
+            
+            # Purge each guild's channel
+            for guild, channel in guilds_with_channel:
+                try:
+                    # Check if bot has permission to manage messages
+                    if not channel.permissions_for(channel.guild.me).manage_messages:
+                        print(f"❌ Bot doesn't have permission to manage messages in guild '{guild.name}' channel '{channel_name}'")
+                        continue
+                    
+                    # Delete all messages
+                    deleted_count = 0
+                    async for message in channel.history(limit=None):
+                        try:
+                            await message.delete()
+                            deleted_count += 1
+                            await asyncio.sleep(self.MESSAGE_DELETE_WAIT_TIME)  # Rate limiting
+                        except Exception as e:
+                            print(f"❌ Failed to delete message {message.id} in guild '{guild.name}': {e}")
+                    
+                    total_deleted += deleted_count
+                    print(f"✅ Purged {deleted_count} messages from guild '{guild.name}' channel '{channel_name}'")
+                    
+                    # Send purge confirmation to this guild's channel
+                    embed = discord.Embed(
+                        title="🧹 Channel Purged",
+                        description=f"Successfully deleted **{deleted_count}** messages from the channel",
+                        color=discord.Color.blue()
+                    )
+                    embed.add_field(
+                        name="⏰ Next Purge",
+                        value=f"<t:{int((datetime.datetime.now(pytz.timezone('US/Pacific')) + datetime.timedelta(hours=self.bot.config.request_channel_purge_hours)).timestamp())}:R>",
+                        inline=True
+                    )
+                    embed.set_footer(text=f"Auto-purge every {self.bot.config.request_channel_purge_hours} hours")
+                    
+                    await channel.send(embed=embed)
+                    
+                except Exception as e:
+                    print(f"❌ Error purging channel in guild '{guild.name}': {e}")
+            
+            print(f"✅ Total purged {total_deleted} messages across {len(guilds_with_channel)} guilds")
+            
+        except Exception as e:
+            print(f"❌ Error purging channels in all guilds: {e}")
+
+    async def _send_purge_reminder(self, hours_left: int, target_guild=None):
         """Send a reminder about upcoming channel purge"""
         try:
             channel_name = self.bot.config.request_channel_name
@@ -1578,10 +1643,15 @@ class Download_Commands(commands.Cog):
             
             # Find the channel
             channel = None
-            for guild in self.bot.guilds:
-                channel = discord.utils.get(guild.text_channels, name=channel_name)
-                if channel:
-                    break
+            if target_guild:
+                # Send reminder to specific guild's channel
+                channel = discord.utils.get(target_guild.text_channels, name=channel_name)
+            else:
+                # Send reminder to all guilds' channels (for automatic reminders)
+                for guild in self.bot.guilds:
+                    channel = discord.utils.get(guild.text_channels, name=channel_name)
+                    if channel:
+                        break
             
             if not channel:
                 return
@@ -1622,6 +1692,66 @@ class Download_Commands(commands.Cog):
         except Exception as e:
             print(f"❌ Error sending purge reminder: {e}")
 
+    async def _send_purge_reminder_to_all_guilds(self, hours_left: int):
+        """Send a reminder about upcoming channel purge to all guilds that have the channel"""
+        try:
+            channel_name = self.bot.config.request_channel_name
+            if not channel_name:
+                return
+            
+            # Find all guilds that have the channel
+            guilds_with_channel = []
+            for guild in self.bot.guilds:
+                channel = discord.utils.get(guild.text_channels, name=channel_name)
+                if channel:
+                    guilds_with_channel.append((guild, channel))
+            
+            if not guilds_with_channel:
+                print(f"❌ Channel '{channel_name}' not found in any guild")
+                return
+            
+            # Determine reminder frequency
+            if hours_left == 1:
+                # Send reminder every 15 minutes for the last hour
+                reminder_text = "⚠️ **Channel will be purged in 1 hour!**"
+                color = discord.Color.red()
+            else:
+                # Send hourly reminder
+                reminder_text = f"⏰ **Channel will be purged in {hours_left} hours**"
+                color = discord.Color.orange()
+            
+            embed = discord.Embed(
+                title="🕐 Purge Reminder",
+                description=reminder_text,
+                color=color
+            )
+            
+            if hours_left == 1:
+                embed.add_field(
+                    name="📢 Reminder Frequency",
+                    value="You'll receive a reminder every 15 minutes until purge",
+                    inline=False
+                )
+            
+            embed.add_field(
+                name="💡 Save Important Info",
+                value="Make sure to save any important information before the purge",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"Auto-purge every {self.bot.config.request_channel_purge_hours} hours")
+            
+            # Send reminder to all guilds that have the channel
+            for guild, channel in guilds_with_channel:
+                try:
+                    await channel.send(embed=embed)
+                    print(f"✅ Sent purge reminder to guild '{guild.name}' channel '{channel_name}'")
+                except Exception as e:
+                    print(f"❌ Failed to send reminder to guild '{guild.name}': {e}")
+            
+        except Exception as e:
+            print(f"❌ Error sending purge reminders to all guilds: {e}")
+
     async def _start_reminder_scheduler(self):
         """Start the reminder scheduler in a separate thread"""
         if not self.bot.config.request_channel_name or self.bot.config.request_channel_purge_hours is None:
@@ -1657,11 +1787,11 @@ class Download_Commands(commands.Cog):
                 # Send reminders based on time remaining
                 if hours_until_purge == 1:
                     # Send reminder every 15 minutes for the last hour
-                    asyncio.run_coroutine_threadsafe(self._send_purge_reminder(1), self.bot.loop)
+                    asyncio.run_coroutine_threadsafe(self._send_purge_reminder_to_all_guilds(1), self.bot.loop)
                     time.sleep(15 * 60)  # Wait 15 minutes
                 elif hours_until_purge <= 12:
                     # Send hourly reminder
-                    asyncio.run_coroutine_threadsafe(self._send_purge_reminder(hours_until_purge), self.bot.loop)
+                    asyncio.run_coroutine_threadsafe(self._send_purge_reminder_to_all_guilds(hours_until_purge), self.bot.loop)
                     time.sleep(60 * 60)  # Wait 1 hour
                 else:
                     # Sleep for a longer period
