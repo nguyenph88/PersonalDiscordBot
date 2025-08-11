@@ -40,7 +40,7 @@ REQUEST_CHANNEL_PURGE_HOURS=6
         print("   - DISCORD_OWNER_ID: Your Discord user ID")
         print("   - ALLDEBRID_API_KEY: Your AllDebrid API key (optional)")
         print("   - REQUEST_CHANNEL_NAME: Channel name for bot commands (optional)")
-        print("   - REQUEST_CHANNEL_PURGE_HOURS: Hours between channel purges (1,2,3,4,6,12) (optional)")
+        print("   - REQUEST_CHANNEL_PURGE_HOURS: Hours between channel purges (0,1,2,3,4,6,12) - 0 disables auto-purge (optional)")
     except Exception as e:
         print(f"❌ Error creating .env file: {e}")
 

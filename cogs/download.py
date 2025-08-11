@@ -1282,7 +1282,7 @@ class Download_Commands(commands.Cog):
         """Show channel purge information and allow manual purging"""
         try:
             # Check if channel purging is configured
-            if not self.bot.config.request_channel_name or not self.bot.config.request_channel_purge_hours:
+            if not self.bot.config.request_channel_name or self.bot.config.request_channel_purge_hours is None:
                 embed = self._create_error_embed(
                     "❌ Channel Purging Not Configured",
                     "Channel purging is not configured. Please set `REQUEST_CHANNEL_NAME` and `REQUEST_CHANNEL_PURGE_HOURS` in your `.env` file.",
@@ -1292,7 +1292,7 @@ class Download_Commands(commands.Cog):
                 return
 
             # Validate purge hours
-            valid_hours = [1, 2, 3, 4, 6, 12]
+            valid_hours = [0, 1, 2, 3, 4, 6, 12]
             if self.bot.config.request_channel_purge_hours not in valid_hours:
                 embed = self._create_error_embed(
                     "❌ Invalid Purge Configuration",
@@ -1318,59 +1318,88 @@ class Download_Commands(commands.Cog):
                 await ctx.send(embed=embed)
                 return
 
-            # Calculate next purge time
-            pdt_tz = pytz.timezone('US/Pacific')
-            now = datetime.datetime.now(pdt_tz)
-            
-            # Calculate next purge time (midnight + purge interval)
-            next_purge = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            
-            # If we're past midnight today, move to next interval
-            while next_purge <= now:
-                next_purge += datetime.timedelta(hours=self.bot.config.request_channel_purge_hours)
-            
-            # Calculate time until next purge
-            time_until_purge = next_purge - now
-            hours_until_purge = time_until_purge.total_seconds() / 3600
+            # Check if auto-purge is disabled
+            if self.bot.config.request_channel_purge_hours == 0:
+                # Create information embed for disabled auto-purge
+                embed = discord.Embed(
+                    title="🧹 Channel Purge Information",
+                    description=f"Information about channel purging for `#{self.bot.config.request_channel_name}`",
+                    color=discord.Color.orange()
+                )
 
-            # Create information embed
-            embed = discord.Embed(
-                title="🧹 Channel Purge Information",
-                description=f"Information about automatic channel purging for `#{self.bot.config.request_channel_name}`",
-                color=discord.Color.blue()
-            )
+                embed.add_field(
+                    name="📺 Channel",
+                    value=f"`#{self.bot.config.request_channel_name}`",
+                    inline=True
+                )
 
-            embed.add_field(
-                name="📺 Channel",
-                value=f"`#{self.bot.config.request_channel_name}`",
-                inline=True
-            )
+                embed.add_field(
+                    name="⏰ Auto-Purge Status",
+                    value="**Disabled** (The value is set to 0 in the .env file)",
+                    inline=True
+                )
 
-            embed.add_field(
-                name="⏰ Purge Interval",
-                value=f"Every **{self.bot.config.request_channel_purge_hours}** hours",
-                inline=True
-            )
+                embed.add_field(
+                    name="💡 Manual Purge",
+                    value="React with 👍 to purge the channel immediately",
+                    inline=True
+                )
 
-            embed.add_field(
-                name="🕐 Next Scheduled Purge",
-                value=f"<t:{int(next_purge.timestamp())}:F>\n(<t:{int(next_purge.timestamp())}:R>)",
-                inline=False
-            )
+                embed.set_footer(text="Auto-purge is disabled. Use this command to manually purge the channel.")
+            else:
+                # Calculate next purge time for enabled auto-purge
+                pdt_tz = pytz.timezone('US/Pacific')
+                now = datetime.datetime.now(pdt_tz)
+                
+                # Calculate next purge time (midnight + purge interval)
+                next_purge = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                
+                # If we're past midnight today, move to next interval
+                while next_purge <= now:
+                    next_purge += datetime.timedelta(hours=self.bot.config.request_channel_purge_hours)
+                
+                # Calculate time until next purge
+                time_until_purge = next_purge - now
+                hours_until_purge = time_until_purge.total_seconds() / 3600
 
-            embed.add_field(
-                name="⏳ Time Remaining",
-                value=f"**{hours_until_purge:.1f}** hours until next purge",
-                inline=True
-            )
+                # Create information embed for enabled auto-purge
+                embed = discord.Embed(
+                    title="🧹 Channel Purge Information",
+                    description=f"Information about automatic channel purging for `#{self.bot.config.request_channel_name}`",
+                    color=discord.Color.blue()
+                )
 
-            embed.add_field(
-                name="💡 Manual Purge",
-                value="React with 👍 to purge the channel immediately",
-                inline=True
-            )
+                embed.add_field(
+                    name="📺 Channel",
+                    value=f"`#{self.bot.config.request_channel_name}`",
+                    inline=True
+                )
 
-            embed.set_footer(text="Channel purging starts at midnight PDT and follows the configured interval")
+                embed.add_field(
+                    name="⏰ Purge Interval",
+                    value=f"Every **{self.bot.config.request_channel_purge_hours}** hours",
+                    inline=True
+                )
+
+                embed.add_field(
+                    name="🕐 Next Scheduled Purge",
+                    value=f"<t:{int(next_purge.timestamp())}:F>\n(<t:{int(next_purge.timestamp())}:R>)",
+                    inline=False
+                )
+
+                embed.add_field(
+                    name="⏳ Time Remaining",
+                    value=f"**{hours_until_purge:.1f}** hours until next purge",
+                    inline=True
+                )
+
+                embed.add_field(
+                    name="💡 Manual Purge",
+                    value="React with 👍 to purge the channel immediately",
+                    inline=True
+                )
+
+                embed.set_footer(text="Channel purging starts at midnight PDT and follows the configured interval")
 
             # Send the embed and add reaction
             message = await ctx.send(embed=embed)
@@ -1396,20 +1425,36 @@ class Download_Commands(commands.Cog):
                     description=f"Successfully purged `#{self.bot.config.request_channel_name}` as requested.",
                     color=discord.Color.green()
                 )
-                confirm_embed.add_field(
-                    name="⏰ Next Scheduled Purge",
-                    value=f"<t:{int(next_purge.timestamp())}:R>",
-                    inline=True
-                )
+                
+                if self.bot.config.request_channel_purge_hours == 0:
+                    confirm_embed.add_field(
+                        name="⏰ Auto-Purge Status",
+                        value="**Disabled** - No scheduled purges",
+                        inline=True
+                    )
+                else:
+                    confirm_embed.add_field(
+                        name="⏰ Next Scheduled Purge",
+                        value=f"<t:{int(next_purge.timestamp())}:R>",
+                        inline=True
+                    )
+                
                 await ctx.send(embed=confirm_embed)
 
             except asyncio.TimeoutError:
                 # User didn't react in time
-                timeout_embed = discord.Embed(
-                    title="⏰ Timeout",
-                    description="No response received. Channel will be purged automatically at the scheduled time.",
-                    color=discord.Color.orange()
-                )
+                if self.bot.config.request_channel_purge_hours == 0:
+                    timeout_embed = discord.Embed(
+                        title="⏰ Timeout",
+                        description="No response received. Channel was not purged.",
+                        color=discord.Color.orange()
+                    )
+                else:
+                    timeout_embed = discord.Embed(
+                        title="⏰ Timeout",
+                        description="No response received. Channel will be purged automatically at the scheduled time.",
+                        color=discord.Color.orange()
+                    )
                 await message.edit(embed=timeout_embed)
 
         except Exception as e:
@@ -1422,11 +1467,16 @@ class Download_Commands(commands.Cog):
 
     async def _start_channel_purge_scheduler(self):
         """Start the channel purge scheduler in a separate thread"""
-        if not self.bot.config.request_channel_name or not self.bot.config.request_channel_purge_hours:
+        if not self.bot.config.request_channel_name or self.bot.config.request_channel_purge_hours is None:
+            return
+        
+        # Check if auto-purge is disabled (0 hours)
+        if self.bot.config.request_channel_purge_hours == 0:
+            print(f"ℹ️ Auto-purge disabled for channel '{self.bot.config.request_channel_name}' (REQUEST_CHANNEL_PURGE_HOURS = 0)")
             return
         
         # Validate purge hours
-        valid_hours = [1, 2, 3, 4, 6, 12]
+        valid_hours = [0, 1, 2, 3, 4, 6, 12]
         if self.bot.config.request_channel_purge_hours not in valid_hours:
             print(f"Warning: REQUEST_CHANNEL_PURGE_HOURS must be one of {valid_hours}. Current value: {self.bot.config.request_channel_purge_hours}")
             return
@@ -1574,7 +1624,12 @@ class Download_Commands(commands.Cog):
 
     async def _start_reminder_scheduler(self):
         """Start the reminder scheduler in a separate thread"""
-        if not self.bot.config.request_channel_name or not self.bot.config.request_channel_purge_hours:
+        if not self.bot.config.request_channel_name or self.bot.config.request_channel_purge_hours is None:
+            return
+        
+        # Check if auto-purge is disabled (0 hours)
+        if self.bot.config.request_channel_purge_hours == 0:
+            print(f"ℹ️ Reminder scheduler disabled for channel '{self.bot.config.request_channel_name}' (REQUEST_CHANNEL_PURGE_HOURS = 0)")
             return
         
         # Start reminder scheduler in a separate thread
