@@ -826,7 +826,7 @@ class Download_Commands(commands.Cog):
                         )
                         next_steps_embed.add_field(
                             name="🔗 Step 2: Download Files",
-                            value="`!AD download <file_link>`\n*(Use the links from Step 1)*",
+                            value="`!AD download <file_link>`\n*(Use the links from magnet_get_files)*",
                             inline=False
                         )
                         next_steps_embed.add_field(
@@ -948,74 +948,66 @@ class Download_Commands(commands.Cog):
                                     magnet_links.extend(file_group['e'])
                         
                         if magnet_links:
-                            # Create embed with magnet files information
-                            embed = discord.Embed(
+                            # Send summary embed first
+                            summary_embed = discord.Embed(
                                 title="📁 Magnet Files Available",
                                 description=f"**Magnet ID:** `{magnet_id}`",
                                 color=discord.Color.green()
                             )
                             
-                            embed.add_field(name="📋 Total Files", value=f"{len(magnet_links)} files", inline=True)
+                            summary_embed.add_field(name="📋 Total Files", value=f"{len(magnet_links)} files", inline=True)
+                            summary_embed.add_field(name="📤 Sending Files", value="One file per message below", inline=True)
                             
-                            # Show all files with download links
-                            files_display = ""
+                            summary_embed.set_footer(text=f"Magnet ID: {magnet_id}")
+                            await ctx.send(embed=summary_embed)
+                            
+                            # Send one file per embed
                             for i, link in enumerate(magnet_links, 1):
                                 file_name = link.get('n', 'Unknown')
                                 file_size = self._format_file_size(link.get('s', 'Unknown'))
                                 download_link = link.get('l', 'No link available')
+                                file_type = self._extract_file_type(file_name)
                                 
-                                # Truncate long filenames
-                                display_name = self._truncate_text(file_name, 40)
+                                # Create individual file embed
+                                file_embed = discord.Embed(
+                                    title=f"📁 File {i}/{len(magnet_links)}",
+                                    description=f"**{file_name}**",
+                                    color=discord.Color.blue()
+                                )
                                 
-                                files_display += f"**{i}.** {display_name}\n"
-                                files_display += f"   📏 Size: {file_size}\n"
-                                files_display += f"   🔗 Link: {download_link}\n\n"
+                                file_embed.add_field(name="📏 Size", value=file_size, inline=True)
+                                file_embed.add_field(name="📋 Type", value=file_type, inline=True)
+                                file_embed.add_field(name="🔗 Download Link", value=download_link, inline=False)
+                                file_embed.add_field(name="💻 Download Command", value=f"`!AD download {download_link}`", inline=False)
+                                
+                                file_embed.set_footer(text=f"File {i} of {len(magnet_links)} | Magnet ID: {magnet_id}")
+                                await ctx.send(embed=file_embed)
+                                
+                                # Wait 0.5 seconds before sending the next message
+                                if i < len(magnet_links):  # Don't wait after the last file
+                                    await asyncio.sleep(0.5)
                             
-                            embed.add_field(name="📋 Files & Download Links", value=files_display, inline=False)
-                            
-                            embed.set_footer(text=f"Magnet ID: {magnet_id}")
-                            await ctx.send(embed=embed)
-                            
-                            # Send additional message with download instructions
-                            download_instructions_embed = discord.Embed(
+                            # Send final instructions embed
+                            instructions_embed = discord.Embed(
                                 title="🔗 Download Instructions",
-                                description="To request direct download links for any of these files, use the commands below:",
-                                color=discord.Color.blue()
+                                description="To download any file, use the command shown above each file:",
+                                color=discord.Color.purple()
                             )
                             
-                            # Create download commands for each file
-                            download_commands = ""
-
-                            download_instructions_embed.add_field(
+                            instructions_embed.add_field(
                                 name="💡 How to Download",
-                                value="1. Click on any command below to copy it\n2. Paste it in the chat and press Enter\n3. The bot will provide you with a direct download link",
+                                value="1. Copy the download command from any file above\n2. Paste it in the chat and press Enter\n3. The bot will provide you with a direct download link",
                                 inline=False
                             )
-
-                            for i, link in enumerate(magnet_links, 1):
-                                file_name = link.get('n', 'Unknown')
-                                download_link = link.get('l', 'No link available')
-                                
-                                # Truncate long filenames for display
-                                display_name = self._truncate_text(file_name, 100)
-                                
-                                download_commands += f"**{i}.** `!AD download {download_link}`\n"
-                                download_commands += f"   📁 File: {display_name}\n\n"
                             
-                            download_instructions_embed.add_field(
-                                name="📋 Download Commands",
-                                value=download_commands,
-                                inline=False
-                            )
-                        
-                            download_instructions_embed.add_field(
+                            instructions_embed.add_field(
                                 name="⚠️ Important Notes",
                                 value="• Links will expire in 48 hours\n• You can download files one at a time\n• Some files in the magnet are trash or virus files - use your own judgement\n• Commands are in code blocks for easy copying",
                                 inline=False
                             )
                             
-                            download_instructions_embed.set_footer(text=f"Magnet ID: {magnet_id} | Total Files: {len(magnet_links)}")
-                            await ctx.send(embed=download_instructions_embed)
+                            instructions_embed.set_footer(text=f"Magnet ID: {magnet_id} | Total Files: {len(magnet_links)}")
+                            await ctx.send(embed=instructions_embed)
                         else:
                             embed = self._create_error_embed(
                                 "❌ No Files Available",
