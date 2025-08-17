@@ -108,62 +108,47 @@ class Steam_Commands(commands.Cog):
             page_source = self.driver.page_source
             current_url = self.driver.current_url
             
-            print(f"🔍 Checking login result...")
-            print(f"🌐 Current URL: {current_url}")
-            print(f"📄 Page contains 'Edit Profile': {'Edit Profile' in page_source}")
-            print(f"📄 Page contains 'Steam Mobile App': {'Use the Steam Mobile App to confirm your sign in' in page_source}")
-            print(f"📄 Page contains 'Email verification': {'Enter the code from your email address at' in page_source}")
+
             
             # Check for successful login without verification needed
             if ("Edit Profile" in page_source and 
                 ("steamcommunity.com/profiles" in current_url or 
                  "steamcommunity.com/id/" in current_url or
                  "steamcommunity.com/home" in current_url)):
-                print("✅ SUCCESS: Login completed successfully!")
                 try:
                     profile_name_element = self.driver.find_element(
                         By.CSS_SELECTOR, "span.actual_persona_name"
                     )
                     profile_name = profile_name_element.text
-                    print(f"👤 Profile Name: {profile_name}")
                     return "success", current_url, profile_name
                 except Exception as e:
-                    print(f"⚠️ Could not extract profile name: {e}")
                     return "success", current_url, "Unknown"
             
             # Check for Steam Mobile App requirement
             elif "Use the Steam Mobile App to confirm your sign in" in page_source:
-                print("📱 Steam Mobile App authentication required")
                 return "mobile_app", None, None
             
             # Check for email verification requirement
             elif "Enter the code from your email address at" in page_source:
-                print("📧 Email verification required - 5-character code needed")
                 return "email_verification", None, None
             
             # Check for other common Steam responses
             elif "Incorrect login" in page_source or "Invalid login" in page_source:
-                print("❌ Invalid username or password")
                 return "invalid_credentials", None, None
             elif "CAPTCHA" in page_source or "captcha" in page_source.lower():
-                print("🖼️ CAPTCHA required")
                 return "captcha_required", None, None
             elif "Steam Guard" in page_source:
-                print("🔐 Steam Guard required")
                 return "steam_guard_required", None, None
             else:
-                print("⚠️ Login result unclear - page content:")
-                print(f"📄 First 500 chars: {page_source[:500]}")
                 return "unknown", None, None
                 
         except Exception as e:
-            print(f"❌ Error checking login result: {e}")
             return "error", None, None
     
     async def handle_email_verification(self, ctx):
         """Handle email verification by entering 5-character code"""
         try:
-            await ctx.send("Enter 5-character verification code:")
+            #await ctx.send("Enter 5-character verification code:")
             
             code_inputs = self.driver.find_elements(
                 By.XPATH, "//input[@type='text' and @maxlength='1' and @autocomplete='none']"
@@ -175,15 +160,10 @@ class Steam_Commands(commands.Cog):
             
             # Wait for user response
             def check(message):
-                # Debug logging
-                print(f"Message received: {message.content} from {message.author} in {message.channel}")
-                print(f"Expected author: {ctx.author}, channel: {ctx.channel}")
-                print(f"Author match: {message.author == ctx.author}")
-                print(f"Channel match: {message.channel == ctx.channel}")
                 return message.author == ctx.author and message.channel == ctx.channel
             
             try:
-                await ctx.send("Waiting for your verification code...")
+                await ctx.send("Enter your 5-character verification code in the message box below:")
                 msg = await self.bot.wait_for('message', timeout=60.0, check=check)
                 verification_code = msg.content.strip()
                 await ctx.send(f"Received code: {verification_code}")
@@ -240,25 +220,18 @@ class Steam_Commands(commands.Cog):
     async def handle_mobile_app_verification(self, ctx):
         """Handle Steam Mobile App authentication"""
         try:
-            await ctx.send("Approve sign-in in Steam Mobile App, then reply 'done'")
+
             
             def check(message):
-                # Debug logging
-                print(f"Mobile app message received: {message.content} from {message.author} in {message.channel}")
-                print(f"Expected author: {ctx.author}, channel: {ctx.channel}")
-                print(f"Content match: {message.content.lower() == 'done'}")
                 return message.author == ctx.author and message.channel == ctx.channel and message.content.lower() == 'done'
             
             try:
-                await ctx.send("Waiting for 'done' reply...")
+                await ctx.send("Approve sign-in in Steam Mobile App, then reply 'done'...")
                 msg = await self.bot.wait_for('message', timeout=120.0, check=check)
                 await ctx.send(f"Received: {msg.content}")
             except Exception as e:
                 await ctx.send(f"Timeout or error waiting for mobile app approval: {e}")
                 return "timeout", None, None
-            
-            # Wait longer for Steam to process mobile app approval
-            await ctx.send("Mobile app approval received. Waiting for Steam to process...")
             
             # Wait 5 seconds for Steam to process mobile app approval
             await ctx.send("Mobile app approval received. Waiting 5 seconds for Steam to process...")
@@ -268,8 +241,7 @@ class Steam_Commands(commands.Cog):
             current_url = self.driver.current_url
             page_source = self.driver.page_source
             
-            print(f"🔍 Mobile app check: URL={current_url}")
-            print(f"📄 Page contains 'Edit Profile': {'Edit Profile' in page_source}")
+
             
             if ("Edit Profile" in page_source and 
                 ("steamcommunity.com/profiles" in current_url or 
