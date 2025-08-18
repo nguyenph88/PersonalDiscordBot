@@ -61,7 +61,86 @@ Just a personal discord bot for my things
    - `Manage Messages` permission in the specified channel
    - The bot will automatically start the purge scheduler when loaded
 
+## Running the Bot
+
+### Option 1: Docker (Recommended)
+
+**Prerequisites:**
+- Docker and Docker Compose installed
+- `.env` file configured
+
+**Quick Start:**
+```bash
+# Build and start the bot
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop the bot
+docker-compose down
+
+# Rebuild and restart (for code changes)
+docker-compose up --build -d
+```
+
+**Development with Live Code Changes:**
+```bash
+# Start with volume mounts for live code changes
+docker-compose up -d
+
+# The bot will automatically reload when you modify files in:
+# - cogs/ directory
+# - utils/ directory
+```
+
+**Troubleshooting:**
+```bash
+# Force recreate container
+docker-compose up -d --force-recreate
+
+# Full restart
+docker-compose down
+docker-compose up -d
+
+# Check container status
+docker-compose ps
+
+# View detailed logs
+docker-compose logs -f --tail=100
+```
+
+### Option 2: Local Python
+
+**Prerequisites:**
+- Python 3.8+
+- Google Chrome (for Steam functionality)
+- ChromeDriver (automatically managed by webdriver-manager)
+
+**Setup:**
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the bot
+python index.py
+```
+
 ## Commands
+
+### Steam Commands (Prefix: !Steam)
+
+- `!Steam login <username> <password>` - Login to Steam web interface
+- `!Steam activate <key1,key2;key3>` - Activate product key(s) (supports multiple keys separated by comma or semicolon)
+- `!Steam quit` - Close browser session
+- `!Steam list` - Show active session status
+
+**Steam Features:**
+- **Headless Chrome Automation**: Uses Selenium with headless Chrome for reliable Steam web interaction
+- **Multi-Factor Authentication**: Supports email verification codes and Steam Mobile App approval
+- **Product Key Activation**: Automatically activates Steam product keys with error handling
+- **Session Management**: Maintains browser session for multiple operations
+- **Multiple Key Support**: Activate multiple keys with automatic delays between activations
 
 ### AllDebrid Commands (Prefix: !AD)
 
@@ -83,6 +162,23 @@ Just a personal discord bot for my things
 - `!help` - Show help information
 
 ## Features
+
+### Steam Integration
+
+The bot includes comprehensive Steam functionality:
+
+- **Secure Login**: Uses headless Chrome browser automation for reliable Steam web login
+- **Authentication Handling**: Supports various Steam authentication methods:
+  - Email verification codes (5-character codes)
+  - Steam Mobile App approval
+  - CAPTCHA detection
+- **Product Key Management**: 
+  - Activate single or multiple product keys
+  - Automatic error detection and reporting
+  - Game name extraction on successful activation
+  - Support for comma/semicolon separated key lists
+- **Session Persistence**: Maintains browser session for efficient multiple operations
+- **Cross-Platform**: Works on Windows, Linux, and macOS via Docker
 
 ### Automatic Channel Purging
 
@@ -116,3 +212,52 @@ The bot also supports manual channel purging:
 - **Interactive confirmation** - Users can react with 👍 to immediately purge the channel
 - **Timeout handling** - If no reaction is received within 15 seconds, the operation is cancelled
 - **Real-time information** - Displays channel name, purge interval, and time until next scheduled purge
+
+## Technical Details
+
+### Dependencies
+
+**Core:**
+- `discord.py` - Discord bot framework
+- `python-dotenv` - Environment variable management
+
+**Steam Integration:**
+- `selenium>=4.15.0` - Web browser automation
+- `webdriver-manager>=4.0.0` - Automatic ChromeDriver management
+
+**AllDebrid Integration:**
+- `requests` - HTTP client for API calls
+
+### Docker Configuration
+
+The Docker setup includes:
+- **Python 3.10-slim** base image
+- **Google Chrome** installation for Selenium automation
+- **Volume mounts** for live code development
+- **Health checks** for container monitoring
+- **Environment variables** for headless Chrome display
+
+### File Structure
+
+```
+PersonalDiscordBot/
+├── cogs/                    # Discord bot command modules
+│   ├── admin.py            # Administrative commands
+│   ├── download.py         # Download and magnet functionality
+│   ├── events.py           # Event handlers
+│   ├── fun.py              # Fun commands
+│   ├── info.py             # Information commands
+│   ├── mod.py              # Moderation commands
+│   └── steam.py            # Steam integration commands
+├── utils/                   # Utility modules
+│   ├── config.py           # Configuration management
+│   ├── data.py             # Data handling utilities
+│   ├── default.py          # Default settings
+│   ├── http.py             # HTTP utilities
+│   └── permissions.py      # Permission management
+├── docker-compose.yml       # Docker orchestration
+├── Dockerfile              # Docker image definition
+├── requirements.txt         # Python dependencies
+├── index.py                # Main bot entry point
+└── README.md               # This file
+```
