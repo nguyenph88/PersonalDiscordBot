@@ -334,16 +334,25 @@ class Steam_Commands(commands.Cog):
             await ctx.send(f"⏰ Auto-quit: Steam session closed after {self.quit_after_given_time} minutes")
     
     @commands.command(name="Steam")
-    async def steam_command(self, ctx, action: str = None, username: str = None, password: str = None):
+    async def steam_command(self, ctx, action: str = None, *, args: str = None):
         """Steam login command"""
         if not action:
             await ctx.send("Available commands:\n`!Steam login <username> <password>` - Login to Steam\n`!Steam activate <key1,key2;key3>` - Activate product key(s)\n`!Steam quit` - Close browser session")
             return
             
         if action.lower() == "login":
-            if not username or not password:
+            if not args:
                 await ctx.send("Usage: !Steam login <username> <password>")
                 return
+            
+            # Parse username and password from args
+            args_parts = args.split()
+            if len(args_parts) < 2:
+                await ctx.send("Usage: !Steam login <username> <password>")
+                return
+            
+            username = args_parts[0]
+            password = args_parts[1]
             
             await ctx.send("Starting Steam login...")
             
@@ -445,12 +454,12 @@ class Steam_Commands(commands.Cog):
                 await ctx.send("Please login first using !Steam login")
                 return
             
-            if not username:
+            if not args:
                 await ctx.send("Usage: !Steam activate <key1,key2;key3>")
                 return
             
             # Split keys by comma or semicolon
-            keys = [key.strip() for key in username.replace(';', ',').split(',') if key.strip()]
+            keys = [key.strip() for key in args.replace(';', ',').split(',') if key.strip()]
             
             if len(keys) == 1:
                 await self.activate_product_key(ctx, keys[0])
