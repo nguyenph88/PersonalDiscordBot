@@ -303,24 +303,18 @@ class Steam_Commands(commands.Cog):
             page_source = self.driver.page_source
             current_url = self.driver.current_url
             
-            if "Activation Successful" in page_source:
-                try:
+            # Check for error_display element first
+            try:
+                error_element = self.driver.find_element(By.ID, "error_display")
+                if error_element.is_displayed():
+                    error_text = error_element.text
+                    await ctx.send(f"Activation unsuccessful: {error_text}")
+                else:
                     game_name_element = self.driver.find_element(By.CSS_SELECTOR, "div.registerkey_lineitem")
                     game_name = game_name_element.text
-                    await ctx.send(f"Key redeemed successfully: {game_name}")
-                except Exception as e:
-                    await ctx.send("Key redeemed successfully. With error: " + e)
-            else:
-                # Check for generic error display
-                try:
-                    error_element = self.driver.find_element(By.ID, "error_display")
-                    if error_element.is_displayed():
-                        error_text = error_element.text
-                        await ctx.send(error_text)
-                    else:
-                        await ctx.send("Product key activation completed successfully.")
-                except Exception as e:
-                    await ctx.send("Product key activation completed successfully. With error: " + e)
+                    await ctx.send(f"Activation successful: {key} | {game_name}")
+            except Exception as e:
+                await ctx.send("Error while activating key. With error: " + str(e))
                 
         except Exception as e:
             await ctx.send(f"Error activating product key: {e}")

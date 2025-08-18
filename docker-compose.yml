@@ -7,10 +7,13 @@ services:
     restart: unless-stopped
     volumes:
       - ./.env:/discord_bot/.env
+      - ./cogs:/discord_bot/cogs
+      - ./utils:/discord_bot/utils
     environment:
       - PYTHONUNBUFFERED=1
+      - DISPLAY=:99
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests, bs4; print('Libraries loaded successfully')"]
+      test: ["CMD", "python", "-c", "import requests, bs4, selenium; print('Libraries loaded successfully')"]
       interval: 30s
       timeout: 10s
       retries: 3
