@@ -18,6 +18,8 @@ class Steam_Commands(commands.Cog):
         self.driver = None
         self.wait = None
         self.is_logged_in = False
+        self.quit_after_given_time = 2 # in minutes
+        self.timer_start_time = None
         
     def setup_driver(self):
         """Set up headless Chrome WebDriver"""
@@ -319,6 +321,18 @@ class Steam_Commands(commands.Cog):
         except Exception as e:
             await ctx.send(f"Error activating product key: {e}")
     
+    async def auto_quit_timer(self, ctx):
+        """Automatically quit Steam session after specified time"""
+        self.timer_start_time = time.time()
+        await asyncio.sleep(self.quit_after_given_time * 60)  # Convert minutes to seconds
+        if self.is_logged_in and self.driver:
+            self.driver.quit()
+            self.driver = None
+            self.wait = None
+            self.is_logged_in = False
+            self.timer_start_time = None
+            await ctx.send(f"⏰ Auto-quit: Steam session closed after {self.quit_after_given_time} minutes")
+    
     @commands.command(name="Steam")
     async def steam_command(self, ctx, action: str = None, username: str = None, password: str = None):
         """Steam login command"""
@@ -363,11 +377,17 @@ class Steam_Commands(commands.Cog):
             if login_result == "success":
                 self.is_logged_in = True
                 await ctx.send(f"Login successful!\nProfile: {profile_name}\nURL: {url}")
+                # Start auto-quit timer
+                await ctx.send(f"⏰ Auto-quit: Session will be terminated after {self.quit_after_given_time} minutes")
+                self.bot.loop.create_task(self.auto_quit_timer(ctx))
             elif login_result == "mobile_app":
                 result, url, profile_name = await self.handle_mobile_app_verification(ctx)
                 if result == "success":
                     self.is_logged_in = True
                     await ctx.send(f"🎉 Login successful!\nProfile: {profile_name}\nURL: {url}")
+                    # Start auto-quit timer
+                    await ctx.send(f"⏰ Auto-quit: Session will be terminated after {self.quit_after_given_time} minutes")
+                    self.bot.loop.create_task(self.auto_quit_timer(ctx))
                 elif result == "mobile_app_rejected":
                     await ctx.send("❌ Mobile app approval was rejected")
                 elif result == "steam_guard_required":
@@ -383,6 +403,9 @@ class Steam_Commands(commands.Cog):
                 if result == "success":
                     self.is_logged_in = True
                     await ctx.send(f"🎉 Login successful!\nProfile: {profile_name}\nURL: {url}")
+                    # Start auto-quit timer
+                    await ctx.send(f"⏰ Auto-quit: Session will be terminated after {self.quit_after_given_time} minutes")
+                    self.bot.loop.create_task(self.auto_quit_timer(ctx))
                 elif result == "incorrect_code":
                     await ctx.send("❌ Email verification failed: Incorrect code")
                 elif result == "invalid_code_format":
@@ -412,6 +435,7 @@ class Steam_Commands(commands.Cog):
                 self.driver = None
                 self.wait = None
                 self.is_logged_in = False
+                self.timer_start_time = None
                 await ctx.send("Browser session closed.")
             else:
                 await ctx.send("No active browser session.")
@@ -438,8 +462,23 @@ class Steam_Commands(commands.Cog):
                     if i < len(keys):  # Don't wait after the last key
                         await asyncio.sleep(2)
         
+        elif action.lower() == "remaining":
+            if not self.is_logged_in or not self.timer_start_time:
+                await ctx.send("No active session with auto-quit timer running.")
+                return
+            
+            elapsed_time = time.time() - self.timer_start_time
+            remaining_time = (self.quit_after_given_time * 60) - elapsed_time
+            
+            if remaining_time <= 0:
+                await ctx.send("⏰ Auto-quit timer has expired. Session will be closed shortly.")
+            else:
+                remaining_minutes = int(remaining_time // 60)
+                remaining_seconds = int(remaining_time % 60)
+                await ctx.send(f"⏰ Auto-quit in: {remaining_minutes} minutes and {remaining_seconds} seconds")
+        
         else:
-            await ctx.send("Available commands:\n`!Steam login <username> <password>` - Login to Steam\n`!Steam activate <key1,key2;key3>` - Activate product key(s)\n`!Steam quit` - Close browser session")
+            await ctx.send("Available commands:\n`!Steam login <username> <password>` - Login to Steam\n`!Steam activate <key1,key2;key3>` - Activate product key(s)\n`!Steam remaining` - Show remaining time until auto-quit\n`!Steam quit` - Close browser session")
             
 
 
