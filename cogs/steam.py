@@ -320,8 +320,12 @@ class Steam_Commands(commands.Cog):
             await ctx.send(f"Error activating product key: {e}")
     
     @commands.command(name="Steam")
-    async def steam_command(self, ctx, action: str, username: str = None, password: str = None):
+    async def steam_command(self, ctx, action: str = None, username: str = None, password: str = None):
         """Steam login command"""
+        if not action:
+            await ctx.send("Available commands:\n`!Steam login <username> <password>` - Login to Steam\n`!Steam activate <key1,key2;key3>` - Activate product key(s)\n`!Steam quit` - Close browser session")
+            return
+            
         if action.lower() == "login":
             if not username or not password:
                 await ctx.send("Usage: !Steam login <username> <password>")
