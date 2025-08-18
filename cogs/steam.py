@@ -17,6 +17,7 @@ class Steam_Commands(commands.Cog):
         self.bot = bot
         self.driver = None
         self.wait = None
+        self.is_logged_in = False
         
     def setup_driver(self):
         """Set up headless Chrome WebDriver"""
@@ -240,9 +241,7 @@ class Steam_Commands(commands.Cog):
             # Check if login was successful
             current_url = self.driver.current_url
             page_source = self.driver.page_source
-            
 
-            
             if ("Edit Profile" in page_source and 
                 ("steamcommunity.com/profiles" in current_url or 
                  "steamcommunity.com/id/" in current_url or
@@ -276,6 +275,55 @@ class Steam_Commands(commands.Cog):
             
         except Exception as e:
             return "mobile_app_verification_error", None, None
+    
+    async def activate_product_key(self, ctx, key):
+        """Activate a Steam product key"""
+        try:
+            await ctx.send(f"Please wait, activating product key: {key}")
+            # Navigate to product key activation page
+            self.driver.get("https://store.steampowered.com/account/registerkey")
+            await asyncio.sleep(3)
+            
+            # Find and enter the product key
+            key_input = self.driver.find_element(By.NAME, "product_key")
+            key_input.clear()
+            key_input.send_keys(key)
+            
+            # Find and check the checkbox
+            checkbox = self.driver.find_element(By.NAME, "accept_ssa")
+            if not checkbox.is_selected():
+                checkbox.click()
+            
+            # Find and click the continue button
+            continue_button = self.driver.find_element(By.ID, "register_btn")
+            continue_button.click()
+            
+            # Wait for response and check result
+            await asyncio.sleep(3)
+            page_source = self.driver.page_source
+            current_url = self.driver.current_url
+            
+            if "Activation Successful" in page_source:
+                try:
+                    game_name_element = self.driver.find_element(By.CSS_SELECTOR, "div.registerkey_lineitem")
+                    game_name = game_name_element.text
+                    await ctx.send(f"Key redeemed successfully: {game_name}")
+                except Exception as e:
+                    await ctx.send("Key redeemed successfully. With error: " + e)
+            else:
+                # Check for generic error display
+                try:
+                    error_element = self.driver.find_element(By.ID, "error_display")
+                    if error_element.is_displayed():
+                        error_text = error_element.text
+                        await ctx.send(error_text)
+                    else:
+                        await ctx.send("Product key activation completed successfully.")
+                except Exception as e:
+                    await ctx.send("Product key activation completed successfully. With error: " + e)
+                
+        except Exception as e:
+            await ctx.send(f"Error activating product key: {e}")
     
     @commands.command(name="Steam")
     async def steam_command(self, ctx, action: str, username: str = None, password: str = None):
@@ -315,10 +363,12 @@ class Steam_Commands(commands.Cog):
             login_result, url, profile_name = self.check_login_result()
             
             if login_result == "success":
+                self.is_logged_in = True
                 await ctx.send(f"Login successful!\nProfile: {profile_name}\nURL: {url}")
             elif login_result == "mobile_app":
                 result, url, profile_name = await self.handle_mobile_app_verification(ctx)
                 if result == "success":
+                    self.is_logged_in = True
                     await ctx.send(f"🎉 Login successful!\nProfile: {profile_name}\nURL: {url}")
                 elif result == "mobile_app_rejected":
                     await ctx.send("❌ Mobile app approval was rejected")
@@ -333,6 +383,7 @@ class Steam_Commands(commands.Cog):
             elif login_result == "email_verification":
                 result, url, profile_name = await self.handle_email_verification(ctx)
                 if result == "success":
+                    self.is_logged_in = True
                     await ctx.send(f"🎉 Login successful!\nProfile: {profile_name}\nURL: {url}")
                 elif result == "incorrect_code":
                     await ctx.send("❌ Email verification failed: Incorrect code")
@@ -356,9 +407,32 @@ class Steam_Commands(commands.Cog):
                 await ctx.send("❌ Login failed: Error occurred during login process")
             else:
                 await ctx.send(f"❌ Login failed: {login_result}")
-            
+        
+        elif action.lower() == "quit":
             if self.driver:
                 self.driver.quit()
+                self.driver = None
+                self.wait = None
+                self.is_logged_in = False
+                await ctx.send("Browser session closed.")
+            else:
+                await ctx.send("No active browser session.")
+        
+        elif action.lower() == "activate":
+            if not self.is_logged_in:
+                await ctx.send("Please login first using !Steam login")
+                return
+            
+            if not username:
+                await ctx.send("Usage: !Steam activate <key>")
+                return
+            
+            await self.activate_product_key(ctx, username)
+        
+        else:
+            await ctx.send("Available commands:\n`!Steam login <username> <password>` - Login to Steam\n`!Steam activate <key>` - Activate product key\n`!Steam quit` - Close browser session")
+            
+
 
 
 async def setup(bot):
