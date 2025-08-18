@@ -18,7 +18,7 @@ class Steam_Commands(commands.Cog):
         self.driver = None
         self.wait = None
         self.is_logged_in = False
-        self.quit_after_given_time = 2 # in minutes
+        self.quit_after_given_time = 15 # in minutes
         self.timer_start_time = None
         
     def setup_driver(self):
