@@ -418,13 +418,24 @@ class Steam_Commands(commands.Cog):
                 return
             
             if not username:
-                await ctx.send("Usage: !Steam activate <key>")
+                await ctx.send("Usage: !Steam activate <key1,key2;key3>")
                 return
             
-            await self.activate_product_key(ctx, username)
+            # Split keys by comma or semicolon
+            keys = [key.strip() for key in username.replace(';', ',').split(',') if key.strip()]
+            
+            if len(keys) == 1:
+                await self.activate_product_key(ctx, keys[0])
+            else:
+                await ctx.send(f"Activating {len(keys)} keys...")
+                for i, key in enumerate(keys, 1):
+                    await ctx.send(f"Activating key {i}/{len(keys)}: {key}")
+                    await self.activate_product_key(ctx, key)
+                    if i < len(keys):  # Don't wait after the last key
+                        await asyncio.sleep(2)
         
         else:
-            await ctx.send("Available commands:\n`!Steam login <username> <password>` - Login to Steam\n`!Steam activate <key>` - Activate product key\n`!Steam quit` - Close browser session")
+            await ctx.send("Available commands:\n`!Steam login <username> <password>` - Login to Steam\n`!Steam activate <key1,key2;key3>` - Activate product key(s)\n`!Steam quit` - Close browser session")
             
 
 
