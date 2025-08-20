@@ -1,5 +1,7 @@
 # PersonalDiscordBot
-Just a personal discord bot for my things
+Just a personal discord bot for my things, build on top of the discord bot by AlexF
+
+*** DISCLAIMER: I have to tell you this, I made this bot for my personal use and I run on my VM which is actually my Proxmox (strongly built). That's why I created many threads and tasks that are running at the same times. If you invite the bot to multiple servers then you will need to multiply the numbers of executors which is resource-consuming. Use at your own risks. ***
 
 ## Setup
 
