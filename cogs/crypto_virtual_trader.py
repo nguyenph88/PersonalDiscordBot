@@ -60,6 +60,22 @@ class VirtualTrader:
             )
         ''')
         
+        # Create signals table to track all trading signals
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                strategy_name TEXT NOT NULL,
+                coin_symbol TEXT NOT NULL,
+                signal_type TEXT NOT NULL,
+                signal_strength TEXT NOT NULL,
+                price REAL NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                executed BOOLEAN DEFAULT FALSE,
+                execution_timestamp TIMESTAMP NULL,
+                notes TEXT
+            )
+        ''')
+        
         conn.commit()
         
         # Check if this is the first initialization (no USD in portfolio)
@@ -127,6 +143,75 @@ class VirtualTrader:
         
         conn.commit()
         conn.close()
+    
+    def log_signal(self, strategy_name, coin_symbol, signal_type, signal_strength, price, notes=None):
+        """Log a trading signal to the database"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO signals 
+            (strategy_name, coin_symbol, signal_type, signal_strength, price, notes, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ''', (strategy_name, coin_symbol, signal_type, signal_strength, price, notes))
+        
+        signal_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        self.logger.info(f"Logged signal: {signal_strength} {signal_type} for {coin_symbol} from {strategy_name}")
+        return signal_id
+    
+    def mark_signal_executed(self, signal_id, execution_timestamp=None):
+        """Mark a signal as executed"""
+        if execution_timestamp is None:
+            execution_timestamp = datetime.now()
+        
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE signals 
+            SET executed = TRUE, execution_timestamp = ? 
+            WHERE id = ?
+        ''', (execution_timestamp, signal_id))
+        
+        conn.commit()
+        conn.close()
+        
+        self.logger.info(f"Marked signal {signal_id} as executed")
+    
+    def get_signal_history(self, strategy_name=None, coin_symbol=None, limit=50):
+        """Get signal history from database"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        query = '''
+            SELECT id, strategy_name, coin_symbol, signal_type, signal_strength, 
+                   price, timestamp, executed, execution_timestamp, notes
+            FROM signals
+        '''
+        params = []
+        
+        if strategy_name or coin_symbol:
+            query += ' WHERE'
+            if strategy_name:
+                query += ' strategy_name = ?'
+                params.append(strategy_name)
+            if coin_symbol:
+                if strategy_name:
+                    query += ' AND'
+                query += ' coin_symbol = ?'
+                params.append(coin_symbol)
+        
+        query += ' ORDER BY timestamp DESC LIMIT ?'
+        params.append(limit)
+        
+        cursor.execute(query, params)
+        results = cursor.fetchall()
+        conn.close()
+        
+        return results
     
     def execute_buy(self, coin_symbol, amount, price, strategy_type, signal_id=None):
         """Execute a buy transaction"""
@@ -410,14 +495,39 @@ class CryptoVirtualTrader(commands.Cog):
                 signal_type = signal.get('signal', '').upper()
                 coin_symbol = signal.get('asset', '')
                 signal_strength = signal.get('strength', 'Unknown')
+                price = signal.get('close_price', 0)
                 
                 self.logger.info(f"Processing {signal_strength} {signal_type} signal for {coin_symbol} from {strategy_name}")
                 
-                if signal_type == 'BUY':
-                    buy_signals.append(signal)
-                elif signal_type == 'SELL':
-                    sell_signals.append(signal)
+                # Log all actionable signals (BUY/SELL) to database
+                if signal_type in ['BUY', 'SELL']:
+                    # Log the signal to database
+                    signal_id = self.trader.log_signal(
+                        strategy_name=strategy_name,
+                        coin_symbol=coin_symbol,
+                        signal_type=signal_type,
+                        signal_strength=signal_strength,
+                        price=price,
+                        notes=f"Auto-detected by {strategy_name} strategy"
+                    )
+                    
+                    # Add signal_id to the signal for tracking
+                    signal['db_signal_id'] = signal_id
+                    
+                    if signal_type == 'BUY':
+                        buy_signals.append(signal)
+                    elif signal_type == 'SELL':
+                        sell_signals.append(signal)
                 else:
+                    # Log non-actionable signals as well for completeness
+                    self.trader.log_signal(
+                        strategy_name=strategy_name,
+                        coin_symbol=coin_symbol,
+                        signal_type=signal_type,
+                        signal_strength=signal_strength,
+                        price=price,
+                        notes=f"Non-actionable signal from {strategy_name} strategy"
+                    )
                     other_signals.append(signal)
             
             # Process BUY signals first (sequentially to manage USD balance)
@@ -648,6 +758,7 @@ class CryptoVirtualTrader(commands.Cog):
                       "`!trader balance <coin>` - Check coin balance\n"
                       "`!trader history [coin] [limit]` - View transaction history\n"
                       "`!trader signal <coin> <strength> [type]` - Test manual trading signal (BUY/SELL)\n"
+                      "`!trader signals [strategy] [coin] [limit]` - View signal history\n"
                       "`!trader execute_signal <signal_data>` - Execute trade from signal")
     
     @trader.command()
@@ -942,6 +1053,52 @@ class CryptoVirtualTrader(commands.Cog):
             await ctx.send(f"✅ **Signal Test Complete:** {signal_strength} {signal_type} signal for {coin_symbol} executed successfully!")
         except Exception as e:
             await ctx.send(f"❌ **Signal Test Failed:** {str(e)}")
+    
+    @trader.command()
+    async def signals(self, ctx: CustomContext, strategy_name: str = None, coin_symbol: str = None, limit: int = 20):
+        """View signal history from the database"""
+        if not await self.check_channel_permission(ctx):
+            return
+        
+        if limit > 50:
+            limit = 50  # Cap at 50 for performance
+        
+        # Get signal history from database
+        signals = self.trader.get_signal_history(strategy_name, coin_symbol, limit)
+        
+        if not signals:
+            strategy_text = f" for {strategy_name}" if strategy_name else ""
+            coin_text = f" and {coin_symbol}" if coin_symbol else ""
+            await ctx.send(f"📭 **No Signals Found{strategy_text}{coin_text}**")
+            return
+        
+        embed = discord.Embed(
+            title="📊 Signal History",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow()
+        )
+        
+        for signal_id, strategy, coin, signal_type, strength, price, timestamp, executed, exec_timestamp, notes in signals:
+            # Create strength indicator with emojis
+            strength_indicators = {
+                "Strong": "🟢",
+                "Medium": "🟡", 
+                "Low": "🔴"
+            }
+            strength_emoji = strength_indicators.get(strength, '⚪')
+            
+            # Create execution status indicator
+            exec_status = "✅ Executed" if executed else "⏳ Pending"
+            exec_time = f" at {exec_timestamp}" if exec_timestamp else ""
+            
+            embed.add_field(
+                name=f"{strength_emoji} {signal_type} {coin}",
+                value=f"**Strategy:** {strategy}\n**Strength:** {strength}\n**Price:** ${price:.2f}\n**Status:** {exec_status}{exec_time}\n**Time:** {timestamp}",
+                inline=False
+            )
+        
+        embed.set_footer(text=f"Showing last {len(signals)} signals")
+        await ctx.send(embed=embed)
     
     @trader.command()
     async def execute_signal(self, ctx: CustomContext, *, signal_data: str):
