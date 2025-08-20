@@ -759,6 +759,9 @@ class CryptoVirtualTrader(commands.Cog):
                       "`!trader history [coin] [limit]` - View transaction history\n"
                       "`!trader signal <coin> <strength> [type]` - Test manual trading signal (BUY/SELL)\n"
                       "`!trader signals [strategy] [coin] [limit]` - View signal history\n"
+                      "`!trader status` - Check scanner status and health\n"
+                      "`!trader add_coin <strategy> <coin>` - Add coin to strategy\n"
+                      "`!trader remove_coin <strategy> <coin>` - Remove coin from strategy\n"
                       "`!trader execute_signal <signal_data>` - Execute trade from signal")
     
     @trader.command()
@@ -1098,6 +1101,146 @@ class CryptoVirtualTrader(commands.Cog):
             )
         
         embed.set_footer(text=f"Showing last {len(signals)} signals")
+        await ctx.send(embed=embed)
+    
+    @trader.command()
+    async def status(self, ctx: CustomContext):
+        """Check the status of all trading scanners"""
+        if not await self.check_channel_permission(ctx):
+            return
+        
+        embed = discord.Embed(
+            title="🔍 Scanner Status Report",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow()
+        )
+        
+        # Check each strategy scanner
+        for strategy_key, strategy_info in self.strategies.items():
+            try:
+                # Test the scanner by creating a quick instance
+                scanner = Tokenometry(config=strategy_info["config"], logger=self.logger)
+                
+                # Try to get a small sample of data to verify it's working
+                test_signals = scanner.scan()
+                
+                if test_signals is not None:
+                    # Scanner is working
+                    status_emoji = "🟢"
+                    status_text = "Active"
+                    signal_count = len(test_signals) if test_signals else 0
+                    
+                    embed.add_field(
+                        name=f"{status_emoji} {strategy_info['name']}",
+                        value=f"**Status:** {status_text}\n**Interval:** {strategy_info['interval']} {'minutes' if strategy_info['interval'] < 60 else 'hours'}\n**Products:** {len(strategy_info['config']['PRODUCT_IDS'])} coins\n**Coins:** {', '.join(strategy_info['config']['PRODUCT_IDS'])}\n**Last Check:** {datetime.now().strftime('%H:%M:%S')}\n**Signals Found:** {signal_count}",
+                        inline=False
+                    )
+                else:
+                    # Scanner returned None (potential issue)
+                    status_emoji = "🟡"
+                    status_text = "Warning - No Response"
+                    
+                    embed.add_field(
+                        name=f"{status_emoji} {strategy_info['name']}",
+                        value=f"**Status:** {status_text}\n**Interval:** {strategy_info['interval']} {'minutes' if strategy_info['interval'] < 60 else 'hours'}\n**Products:** {len(strategy_info['config']['PRODUCT_IDS'])} coins\n**Coins:** {', '.join(strategy_info['config']['PRODUCT_IDS'])}\n**Last Check:** {datetime.now().strftime('%H:%M:%S')}\n**Issue:** Scanner returned no data",
+                        inline=False
+                    )
+                    
+            except Exception as e:
+                # Scanner has an error
+                status_emoji = "🔴"
+                status_text = "Error"
+                
+                embed.add_field(
+                    name=f"{status_emoji} {strategy_info['name']}",
+                    value=f"**Status:** {status_text}\n**Interval:** {strategy_info['interval']} {'minutes' if strategy_info['interval'] < 60 else 'hours'}\n**Products:** {len(strategy_info['config']['PRODUCT_IDS'])} coins\n**Coins:** {', '.join(strategy_info['config']['PRODUCT_IDS'])}\n**Last Check:** {datetime.now().strftime('%H:%M:%S')}\n**Error:** {str(e)[:50]}...",
+                    inline=False
+                )
+        
+        # Add overall system status
+        signal_monitor_status = "🟢 Running" if self.signal_monitor.is_running() else "🔴 Stopped"
+        embed.add_field(
+            name="📊 System Status",
+            value=f"**Signal Monitor:** {signal_monitor_status}\n**Total Strategies:** {len(self.strategies)}\n**Database:** Connected\n**Last Update:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            inline=False
+        )
+        
+        embed.set_footer(text="Scanner health check completed")
+        await ctx.send(embed=embed)
+    
+    @trader.command()
+    async def add_coin(self, ctx: CustomContext, strategy: str, coin: str):
+        """Add a coin to a strategy's PRODUCT_IDS"""
+        if not await self.check_channel_permission(ctx):
+            return
+        
+        strategy = strategy.lower()
+        coin = coin.upper()
+        
+        # Validate strategy
+        if strategy not in self.strategies:
+            valid_strategies = ", ".join(self.strategies.keys())
+            await ctx.send(f"❌ **Invalid Strategy:** Must be one of: {valid_strategies}")
+            return
+        
+        # Validate coin format (should end with -USD)
+        if not coin.endswith('-USD'):
+            await ctx.send("❌ **Invalid Coin Format:** Coin must end with '-USD' (e.g., BTC-USD)")
+            return
+        
+        # Check if coin is already in the strategy
+        current_coins = self.strategies[strategy]["config"]["PRODUCT_IDS"]
+        if coin in current_coins:
+            await ctx.send(f"❌ **Coin Already Exists:** {coin} is already in {strategy} strategy")
+            return
+        
+        # Add coin to strategy
+        self.strategies[strategy]["config"]["PRODUCT_IDS"].append(coin)
+        
+        embed = discord.Embed(
+            title="✅ Coin Added Successfully",
+            color=discord.Color.green(),
+            timestamp=discord.utils.utcnow()
+        )
+        embed.add_field(name="Strategy", value=strategy.title(), inline=True)
+        embed.add_field(name="Coin Added", value=coin, inline=True)
+        embed.add_field(name="Total Coins", value=len(self.strategies[strategy]["config"]["PRODUCT_IDS"]), inline=True)
+        
+        await ctx.send(embed=embed)
+    
+    @trader.command()
+    async def remove_coin(self, ctx: CustomContext, strategy: str, coin: str):
+        """Remove a coin from a strategy's PRODUCT_IDS"""
+        if not await self.check_channel_permission(ctx):
+            return
+        
+        strategy = strategy.lower()
+        coin = coin.upper()
+        
+        # Validate strategy
+        if strategy not in self.strategies:
+            valid_strategies = ", ".join(self.strategies.keys())
+            await ctx.send(f"❌ **Invalid Strategy:** Must be one of: {valid_strategies}")
+            return
+        
+        # Check if coin exists in the strategy
+        current_coins = self.strategies[strategy]["config"]["PRODUCT_IDS"]
+        if coin not in current_coins:
+            await ctx.send(f"❌ **Coin Not Found:** {coin} is not in {strategy} strategy")
+            return
+        
+        # Remove coin from strategy
+        self.strategies[strategy]["config"]["PRODUCT_IDS"].remove(coin)
+        
+        embed = discord.Embed(
+            title="✅ Coin Removed Successfully",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        embed.add_field(name="Strategy", value=strategy.title(), inline=True)
+        embed.add_field(name="Coin Removed", value=coin, inline=True)
+        embed.add_field(name="Remaining Coins", value=len(self.strategies[strategy]["config"]["PRODUCT_IDS"]), inline=True)
+        
         await ctx.send(embed=embed)
     
     @trader.command()
