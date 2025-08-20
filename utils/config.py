@@ -25,6 +25,11 @@ class Config:
     # Channel management configuration
     request_channel_name: str = None
     request_channel_purge_hours: int = None
+    
+    # Crypto trading channel names
+    crypto_day_trade_channel: str = "day-trade"
+    crypto_swing_trade_channel: str = "swing-trade"
+    crypto_long_term_trade_channel: str = "long-term-trade"
 
     @classmethod
     def from_dict(self, **kwargs) -> "Config":
@@ -54,7 +59,7 @@ class Config:
         if not os.path.exists(filename):
             print(f"Warning: {filename} file not found. Please create it with the required environment variables.")
             print("Required variables: DISCORD_TOKEN, DISCORD_PREFIX, DISCORD_OWNER_ID, DISCORD_JOIN_MESSAGE, DISCORD_ACTIVITY_NAME, DISCORD_ACTIVITY_TYPE, DISCORD_STATUS_TYPE")
-            print("Optional variables: ALLDEBRID_API_KEY, REQUEST_CHANNEL_NAME, REQUEST_CHANNEL_PURGE_HOURS")
+            print("Optional variables: ALLDEBRID_API_KEY, REQUEST_CHANNEL_NAME, REQUEST_CHANNEL_PURGE_HOURS, CRYPTO_DAY_TRADE_CHANNEL, CRYPTO_SWING_TRADE_CHANNEL, CRYPTO_LONG_TERM_TRADE_CHANNEL")
             raise FileNotFoundError(f"{filename} file not found. Please create it with the required environment variables.")
         
         return Config.from_dict(**dotenv_values(filename))

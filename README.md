@@ -33,6 +33,11 @@ Just a personal discord bot for my things
    # Channel Management Configuration (Optional)
    REQUEST_CHANNEL_NAME=your_channel_name_here
    REQUEST_CHANNEL_PURGE_HOURS=6
+
+   # Crypto Trading Channel Names (Optional)
+   CRYPTO_DAY_TRADE_CHANNEL=day-trade
+   CRYPTO_SWING_TRADE_CHANNEL=swing-trade
+   CRYPTO_LONG_TERM_TRADE_CHANNEL=long-term-trade
    ```
 
 2. **Edit the .env file** with your actual values:
@@ -41,6 +46,9 @@ Just a personal discord bot for my things
    - `ALLDEBRID_API_KEY`: Your AllDebrid API key (optional, for download features)
    - `REQUEST_CHANNEL_NAME`: Channel name for bot commands (optional)
    - `REQUEST_CHANNEL_PURGE_HOURS`: Hours between channel purges (0,1,2,3,4,6,12) - 0 disables auto-purge (optional)
+   - `CRYPTO_DAY_TRADE_CHANNEL`: Channel name for day trading signals (optional)
+   - `CRYPTO_SWING_TRADE_CHANNEL`: Channel name for swing trading signals (optional)
+   - `CRYPTO_LONG_TERM_TRADE_CHANNEL`: Channel name for long-term trading signals (optional)
 
 ### AllDebrid API Setup
 
@@ -60,6 +68,23 @@ Just a personal discord bot for my things
 2. **Bot permissions required**:
    - `Manage Messages` permission in the specified channel
    - The bot will automatically start the purge scheduler when loaded
+
+### Crypto Trading Setup
+
+1. **Create Discord channels** for trading signals:
+   - Create channels with names matching your `.env` configuration
+   - Default channel names: `day-trade`, `swing-trade`, `long-term-trade`
+   - You can customize these names in the `.env` file
+
+2. **Configure trading strategies** (optional):
+   - Leave channel names blank in `.env` to disable specific strategies
+   - Example: Set `CRYPTO_DAY_TRADE_CHANNEL=` to disable day trading
+   - The bot will only run scanners for configured channels
+
+3. **Bot permissions required**:
+   - `Send Messages` permission in trading channels
+   - `Embed Links` permission for rich signal formatting
+   - `Mention Everyone` permission for owner notifications
 
 ## Running the Bot
 
@@ -156,6 +181,32 @@ python index.py
 - `!AD magnet_search <url>` - Search for magnet URIs on a given URL
 - `!AD purge` - Show channel purge information and allow manual purging
 
+### Crypto Trading Commands (Prefix: !crypto - Strategy: day, long-termterm, swing)
+
+- `!crypto` - Show available commands and strategies
+- `!crypto all` - Check status of all trading scanners
+- `!crypto status [strategy]` - Check scanner status for specific strategy
+- `!crypto scan [strategy]` - Run manual scan for specific strategy
+- `!crypto stop [strategy]` - Stop scanner for specific strategy
+- `!crypto start [strategy]` - Start scanner for specific strategy
+- `!crypto search [strategy]` - Search for trading channels
+- `!crypto list_products [strategy]` - List products for specific strategy
+- `!crypto add_product [strategy] <product_id>` - Add product to strategy
+- `!crypto remove_product [strategy] <product_id>` - Remove product from strategy
+
+**Available Strategies:**
+- `day` - Day trading (5-minute intervals)
+- `swing` - Swing trading (4-hour intervals)
+- `long` - Long-term investing (24-hour intervals)
+
+**Examples:**
+```bash
+!crypto list_products day
+!crypto add_product day BTC-USD
+!crypto remove_product long GRV-USD
+!crypto status swing
+```
+
 ### Basic Commands
 
 - `!download` - Basic download command (legacy)
@@ -179,6 +230,42 @@ The bot includes comprehensive Steam functionality:
   - Support for comma/semicolon separated key lists
 - **Session Persistence**: Maintains browser session for efficient multiple operations
 - **Cross-Platform**: Works on Windows, Linux, and macOS via Docker
+
+### Crypto Trading Integration
+
+The bot includes comprehensive cryptocurrency trading functionality:
+
+- **Multiple Trading Strategies**: 
+  - **Day Trading**: 5-minute signal intervals, 1-hour trend analysis
+  - **Swing Trading**: 4-hour signal intervals, 1-day trend analysis  
+  - **Long-Term Investing**: 24-hour signal intervals, 1-week trend analysis
+
+- **Technical Analysis**: Uses advanced indicators including:
+  - EMA (Exponential Moving Average) for trend detection
+  - RSI (Relative Strength Index) for overbought/oversold conditions
+  - MACD (Moving Average Convergence Divergence) for momentum
+  - ATR (Average True Range) for volatility and stop-loss calculation
+
+- **Flexible Product Management**:
+  - Add/remove cryptocurrency pairs dynamically
+  - Support for major crypto pairs (BTC-USD, ETH-USD, etc.)
+  - Real-time price monitoring and updates
+
+- **Rich Signal Notifications**:
+  - Discord embeds with detailed signal information
+  - Current market prices for all monitored assets
+  - Trade plans with stop-loss and position sizing
+  - Owner tagging and direct message notifications
+
+- **Configurable Channels**:
+  - Customizable channel names via `.env` file
+  - Enable/disable strategies by leaving channel names blank
+  - Automatic channel detection and validation
+
+- **Real-time Monitoring**:
+  - Continuous market scanning at specified intervals
+  - Automatic signal generation and distribution
+  - Status updates and error handling
 
 ### Automatic Channel Purging
 
@@ -228,6 +315,11 @@ The bot also supports manual channel purging:
 **AllDebrid Integration:**
 - `requests` - HTTP client for API calls
 
+**Crypto Trading Integration:**
+- `tokenometry>=1.0.5` - Cryptocurrency analysis and trading signals
+- `pandas` - Data manipulation and analysis
+- `pandas-ta` - Technical analysis indicators
+
 ### Docker Configuration
 
 The Docker setup includes:
@@ -243,6 +335,7 @@ The Docker setup includes:
 PersonalDiscordBot/
 ├── cogs/                    # Discord bot command modules
 │   ├── admin.py            # Administrative commands
+│   ├── crypto.py           # Cryptocurrency trading functionality
 │   ├── download.py         # Download and magnet functionality
 │   ├── events.py           # Event handlers
 │   ├── fun.py              # Fun commands
