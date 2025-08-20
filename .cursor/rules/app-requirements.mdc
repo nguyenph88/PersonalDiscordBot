@@ -11,3 +11,4 @@ alwaysApply: false
 - The app will use SQLite as a database if it needs to store any data
 - The commands will be located under /cogs folder and in subfolder if needed
 - The utils will be located under /utils folder
+- The database will be located under /db folder
