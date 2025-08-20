@@ -1533,10 +1533,16 @@ class Download_Commands(commands.Cog):
                 print(f"❌ Bot doesn't have permission to manage messages in channel '{channel_name}'")
                 return
             
-            # Delete all messages
+            # Delete all messages except pinned ones
             deleted_count = 0
+            skipped_pinned = 0
             async for message in channel.history(limit=None):
                 try:
+                    # Skip pinned messages
+                    if message.pinned:
+                        skipped_pinned += 1
+                        continue
+                    
                     await message.delete()
                     deleted_count += 1
                     await asyncio.sleep(self.MESSAGE_DELETE_WAIT_TIME)  # Rate limiting
@@ -1549,6 +1555,13 @@ class Download_Commands(commands.Cog):
                 description=f"Successfully deleted **{deleted_count}** messages from the channel",
                 color=discord.Color.blue()
             )
+            
+            if skipped_pinned > 0:
+                embed.add_field(
+                    name="📌 Pinned Messages Preserved",
+                    value=f"**{skipped_pinned}** pinned messages were preserved",
+                    inline=True
+                )
             embed.add_field(
                 name="⏰ Next Purge",
                 value=f"<t:{int((datetime.datetime.now(pytz.timezone('US/Pacific')) + datetime.timedelta(hours=self.bot.config.request_channel_purge_hours)).timestamp())}:R>",
@@ -1590,10 +1603,16 @@ class Download_Commands(commands.Cog):
                         print(f"❌ Bot doesn't have permission to manage messages in guild '{guild.name}' channel '{channel_name}'")
                         continue
                     
-                    # Delete all messages
+                    # Delete all messages except pinned ones
                     deleted_count = 0
+                    skipped_pinned = 0
                     async for message in channel.history(limit=None):
                         try:
+                            # Skip pinned messages
+                            if message.pinned:
+                                skipped_pinned += 1
+                                continue
+                            
                             await message.delete()
                             deleted_count += 1
                             await asyncio.sleep(self.MESSAGE_DELETE_WAIT_TIME)  # Rate limiting
@@ -1609,6 +1628,13 @@ class Download_Commands(commands.Cog):
                         description=f"Successfully deleted **{deleted_count}** messages from the channel",
                         color=discord.Color.blue()
                     )
+                    
+                    if skipped_pinned > 0:
+                        embed.add_field(
+                            name="📌 Pinned Messages Preserved",
+                            value=f"**{skipped_pinned}** pinned messages were preserved",
+                            inline=True
+                        )
                     embed.add_field(
                         name="⏰ Next Purge",
                         value=f"<t:{int((datetime.datetime.now(pytz.timezone('US/Pacific')) + datetime.timedelta(hours=self.bot.config.request_channel_purge_hours)).timestamp())}:R>",

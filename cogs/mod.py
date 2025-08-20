@@ -258,8 +258,16 @@ class Moderator(commands.Cog):
         if after:
             after = discord.Object(id=after)
 
+        # Create a new predicate that excludes pinned messages
+        def pinned_safe_predicate(message):
+            # Skip pinned messages
+            if message.pinned:
+                return False
+            # Apply the original predicate
+            return predicate(message)
+
         try:
-            deleted = await ctx.channel.purge(limit=limit, before=before, after=after, check=predicate)
+            deleted = await ctx.channel.purge(limit=limit, before=before, after=after, check=pinned_safe_predicate)
         except discord.Forbidden:
             return await ctx.send("I do not have permissions to delete messages.")
         except discord.HTTPException as e:
@@ -267,7 +275,7 @@ class Moderator(commands.Cog):
 
         deleted = len(deleted)
         if message is True:
-            return await ctx.send(f"🚮 Successfully removed {deleted} message{'' if deleted == 1 else 's'}.")
+            return await ctx.send(f"🚮 Successfully removed {deleted} message{'' if deleted == 1 else 's'} (pinned messages preserved).")
 
     @prune.command()
     async def embeds(self, ctx: CustomContext, search: int = 100):
