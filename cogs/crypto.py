@@ -223,7 +223,7 @@ class CryptoCommands(commands.Cog):
                 "name": "Day Trader",
                 "config": {
                     "STRATEGY_NAME": "Day Trader",
-                    "PRODUCT_IDS": ["GRT-USD", "AVAX-USD", "CRV-USD"],
+                    "PRODUCT_IDS": self._get_product_ids_from_env("day"),
                     "GRANULARITY_SIGNAL": "FIVE_MINUTE",
                     "GRANULARITY_TREND": "ONE_HOUR",
                     "GRANULARITY_SECONDS": {
@@ -258,7 +258,7 @@ class CryptoCommands(commands.Cog):
                 "name": "Aggressive Swing Trader",
                 "config": {
                     "STRATEGY_NAME": "Aggressive Swing Trader",
-                    "PRODUCT_IDS": ["GRT-USD", "AVAX-USD", "CRV-USD"],
+                    "PRODUCT_IDS": self._get_product_ids_from_env("swing"),
                     "GRANULARITY_SIGNAL": "FOUR_HOUR",
                     "GRANULARITY_TREND": "ONE_DAY",
                     "GRANULARITY_SECONDS": {
@@ -294,7 +294,7 @@ class CryptoCommands(commands.Cog):
                 "name": "Long-Term Investor",
                 "config": {
                     "STRATEGY_NAME": "Long-Term Investor",
-                    "PRODUCT_IDS": ["CRV-USD", "GRT-USD", "ADA-USD", "MATIC-USD"],
+                    "PRODUCT_IDS": self._get_product_ids_from_env("long"),
                     "GRANULARITY_SIGNAL": "ONE_DAY",
                     "GRANULARITY_TREND": "ONE_WEEK",
                     "GRANULARITY_SECONDS": {
@@ -354,6 +354,25 @@ class CryptoCommands(commands.Cog):
         
         # Start scanner tasks
         self.start_scanner_tasks()
+    
+    def _get_product_ids_from_env(self, strategy_type: str) -> list:
+        """Get product IDs from environment variables for a specific strategy"""
+        env_var_name = f"crypto_{strategy_type}_strategy_coins"
+        coins_str = getattr(self.bot.config, env_var_name, "")
+        
+        if not coins_str or coins_str.strip() == "":
+            # Fallback to default coins if env var is empty
+            print(f"No product IDs found for {strategy_type} strategy in environment variables")
+            default_coins = {
+                "day": ["AVAX-USD", "SOL-USD", "ADA-USD", "GRT-USD", "CRV-USD"],
+                "swing": ["MATIC-USD", "QNT-USD", "LCX-USD"],
+                "long": ["AVAX-USD", "CHZ-USD", "ICP-USD"]
+            }
+            return default_coins.get(strategy_type, [])
+        
+        # Split comma-separated coins and clean them
+        coins = [coin.strip().upper() for coin in coins_str.split(",") if coin.strip()]
+        return coins
     
     def start_scanner_tasks(self):
         """Start all scanner tasks"""
