@@ -11,6 +11,7 @@ RUN apt-get update && apt-get upgrade -y && \
     wget \
     gnupg \
     unzip \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Google Chrome
@@ -26,8 +27,10 @@ WORKDIR /discord_bot
 COPY requirements.txt .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt || \
+    (echo "Failed to install requirements, retrying..." && \
+     pip install --no-cache-dir -r requirements.txt)
 
 # Copy the rest of the application
 COPY . .

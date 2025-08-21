@@ -579,8 +579,7 @@ class TradingEngine:
 class StrategyManager:
     """Manages trading strategies and their configurations"""
     
-    def __init__(self, bot_config):
-        self.bot_config = bot_config
+    def __init__(self):
         self.strategies = self._create_default_strategies()
     
     def _create_default_strategies(self) -> Dict[str, StrategyConfig]:
@@ -589,7 +588,7 @@ class StrategyManager:
             "day": StrategyConfig(
                 name="Day Trader",
                 strategy_name="Day Trader",
-                product_ids=self._get_product_ids_from_env("day"),
+                product_ids=["AVAX-USD", "SOL-USD", "ADA-USD", "GRT-USD", "CRV-USD"],
                 granularity_signal="FIVE_MINUTE",
                 granularity_trend="ONE_HOUR",
                 trend_indicator="EMA",
@@ -615,7 +614,7 @@ class StrategyManager:
             "swing": StrategyConfig(
                 name="Swing Trader",
                 strategy_name="Aggressive Swing Trader",
-                product_ids=self._get_product_ids_from_env("swing"),
+                product_ids=["MATIC-USD", "QNT-USD", "LCX-USD"],
                 granularity_signal="FOUR_HOUR",
                 granularity_trend="ONE_DAY",
                 trend_indicator="EMA",
@@ -641,7 +640,7 @@ class StrategyManager:
             "long": StrategyConfig(
                 name="Long Term",
                 strategy_name="Long-Term Investor",
-                product_ids=self._get_product_ids_from_env("long"),
+                product_ids=["AVAX-USD", "CHZ-USD", "ICP-USD"],
                 granularity_signal="ONE_DAY",
                 granularity_trend="ONE_WEEK",
                 trend_indicator="SMA",
@@ -665,25 +664,6 @@ class StrategyManager:
                 interval=24
             )
         }
-    
-    def _get_product_ids_from_env(self, strategy_type: str) -> List[str]:
-        """Get product IDs from environment variables for a specific strategy"""
-        env_var_name = f"virtual_trader_{strategy_type}_strategy_coins"
-        coins_str = getattr(self.bot_config, env_var_name, "")
-        
-        if not coins_str or coins_str.strip() == "":
-            # Fallback to default coins if env var is empty
-            print(f"No product IDs found for {strategy_type} strategy in environment variables")
-            default_coins = {
-                "day": ["AVAX-USD", "SOL-USD", "ADA-USD", "GRT-USD", "CRV-USD"],
-                "swing": ["MATIC-USD", "QNT-USD", "LCX-USD"],
-                "long": ["AVAX-USD", "CHZ-USD", "ICP-USD"]
-            }
-            return default_coins.get(strategy_type, [])
-        
-        # Split comma-separated coins and clean them
-        coins = [coin.strip().upper() for coin in coins_str.split(",") if coin.strip()]
-        return coins
     
     def get_strategy(self, strategy_key: str) -> Optional[StrategyConfig]:
         """Get a strategy configuration by key"""
@@ -859,7 +839,7 @@ class CryptoVirtualTrader(commands.Cog):
         self.db_manager = DatabaseManager(bot.config)
         self.price_manager = PriceManager()
         self.trading_engine = TradingEngine(self.db_manager, self.price_manager)
-        self.strategy_manager = StrategyManager(bot.config)
+        self.strategy_manager = StrategyManager()
         self.signal_monitor = SignalMonitor(
             self.strategy_manager, 
             self.trading_engine, 
