@@ -588,7 +588,7 @@ class StrategyManager:
             "day": StrategyConfig(
                 name="Day Trader",
                 strategy_name="Day Trader",
-                product_ids=["BTC-USD", "ETH-USD", "AVAX-USD", "SOL-USD", "ADA-USD"],
+                product_ids=["AVAX-USD", "SOL-USD", "ADA-USD", "GRT-USD", "CRV-USD"],
                 granularity_signal="FIVE_MINUTE",
                 granularity_trend="ONE_HOUR",
                 trend_indicator="EMA",
@@ -614,7 +614,7 @@ class StrategyManager:
             "swing": StrategyConfig(
                 name="Swing Trader",
                 strategy_name="Aggressive Swing Trader",
-                product_ids=["BTC-USD", "ETH-USD", "AVAX-USD", "SOL-USD", "ADA-USD"],
+                product_ids=["MATIC-USD", "QNT-USD", "LCX-USD"],
                 granularity_signal="FOUR_HOUR",
                 granularity_trend="ONE_DAY",
                 trend_indicator="EMA",
@@ -640,7 +640,7 @@ class StrategyManager:
             "long": StrategyConfig(
                 name="Long Term",
                 strategy_name="Long-Term Investor",
-                product_ids=["BTC-USD", "ETH-USD", "AVAX-USD", "SOL-USD", "ADA-USD"],
+                product_ids=["AVAX-USD", "CHZ-USD", "ICP-USD"],
                 granularity_signal="ONE_DAY",
                 granularity_trend="ONE_WEEK",
                 trend_indicator="SMA",
@@ -851,6 +851,24 @@ class CryptoVirtualTrader(commands.Cog):
         self.signal_monitor.start()
         self.signal_monitor_task.start()
     
+    async def _check_channel_restriction(self, ctx: CustomContext) -> bool:
+        """Check if the command is being used in the correct channel"""
+        virtual_trader_channel = getattr(self.bot.config, 'virtual_trader_channel', None)
+        
+        if not virtual_trader_channel or virtual_trader_channel.strip() == "":
+            await ctx.send("❌ **Error:** Virtual trader channel not configured")
+            return False
+        
+        # Remove the # if present for comparison
+        expected_channel = virtual_trader_channel.lstrip('#')
+        current_channel = ctx.channel.name
+        
+        if current_channel != expected_channel:
+            await ctx.send(f"❌ **Channel Restriction:** This command can only be used in the `{virtual_trader_channel}` channel")
+            return False
+        
+        return True
+    
 
     
     def cog_unload(self):
@@ -867,6 +885,10 @@ class CryptoVirtualTrader(commands.Cog):
     @commands.group(name="trader")
     async def trader(self, ctx: CustomContext):
         """Virtual trading commands"""
+        # Check channel restriction for all trader commands
+        if not await self._check_channel_restriction(ctx):
+            return
+        
         if ctx.invoked_subcommand is None:
             await self._show_help(ctx)
     
@@ -901,6 +923,10 @@ class CryptoVirtualTrader(commands.Cog):
     @trader.command()
     async def portfolio(self, ctx: CustomContext):
         """View your current portfolio"""
+        # Check channel restriction
+        if not await self._check_channel_restriction(ctx):
+            return
+        
         portfolio = self.db_manager.get_portfolio_summary()
         
         if not portfolio:
@@ -950,6 +976,10 @@ class CryptoVirtualTrader(commands.Cog):
     @trader.command()
     async def balance(self, ctx: CustomContext, coin_symbol: str):
         """Check balance of a specific coin"""
+        # Check channel restriction
+        if not await self._check_channel_restriction(ctx):
+            return
+        
         coin_symbol = coin_symbol.upper()
         balance = self.db_manager.get_coin_balance(coin_symbol)
         
@@ -978,6 +1008,10 @@ class CryptoVirtualTrader(commands.Cog):
     @trader.command()
     async def buy(self, ctx: CustomContext, coin_symbol: str, usd_amount: float):
         """Buy crypto with USD amount"""
+        # Check channel restriction
+        if not await self._check_channel_restriction(ctx):
+            return
+        
         if usd_amount <= 0:
             await ctx.send("❌ **Error:** USD amount must be positive")
             return
@@ -1033,6 +1067,10 @@ class CryptoVirtualTrader(commands.Cog):
     @trader.command()
     async def sell(self, ctx: CustomContext, coin_symbol: str, crypto_amount: float):
         """Sell crypto for USD"""
+        # Check channel restriction
+        if not await self._check_channel_restriction(ctx):
+            return
+        
         if crypto_amount <= 0:
             await ctx.send("❌ **Error:** Crypto amount must be positive")
             return
@@ -1088,7 +1126,8 @@ class CryptoVirtualTrader(commands.Cog):
     @trader.command()
     async def history(self, ctx: CustomContext, coin_symbol: str = None, limit: int = 10):
         """View transaction history"""
-        if not await self._check_channel(ctx):
+        # Check channel restriction
+        if not await self._check_channel_restriction(ctx):
             return
         
         transactions = self.db_manager.get_transaction_history(coin_symbol, limit)
@@ -1116,6 +1155,10 @@ class CryptoVirtualTrader(commands.Cog):
     @trader.command()
     async def add_coin(self, ctx: CustomContext, strategy: str, coin: str):
         """Add a coin to a strategy's product IDs"""
+        # Check channel restriction
+        if not await self._check_channel_restriction(ctx):
+            return
+        
         strategy = strategy.lower()
         coin = coin.upper()
         
@@ -1144,6 +1187,10 @@ class CryptoVirtualTrader(commands.Cog):
     @trader.command()
     async def remove_coin(self, ctx: CustomContext, strategy: str, coin: str):
         """Remove a coin from a strategy's product IDs"""
+        # Check channel restriction
+        if not await self._check_channel_restriction(ctx):
+            return
+        
         strategy = strategy.lower()
         coin = coin.upper()
         
@@ -1168,6 +1215,10 @@ class CryptoVirtualTrader(commands.Cog):
     @trader.command()
     async def status(self, ctx: CustomContext):
         """Check the status of all trading scanners"""
+        # Check channel restriction
+        if not await self._check_channel_restriction(ctx):
+            return
+        
         embed = discord.Embed(
             title="🔍 Scanner Status Report",
             color=discord.Color.blue(),
@@ -1219,6 +1270,10 @@ class CryptoVirtualTrader(commands.Cog):
     @trader.command()
     async def signals(self, ctx: CustomContext, strategy_name: str = None, coin_symbol: str = None, limit: int = 10):
         """View trading signal history"""
+        # Check channel restriction
+        if not await self._check_channel_restriction(ctx):
+            return
+        
         signals = self.db_manager.get_signals(strategy_name, coin_symbol, limit)
         
         if not signals:
@@ -1244,6 +1299,10 @@ class CryptoVirtualTrader(commands.Cog):
     @trader.command()
     async def signal(self, ctx: CustomContext, coin: str, strength: str, signal_type: str = "BUY"):
         """Test manual trading signal"""
+        # Check channel restriction
+        if not await self._check_channel_restriction(ctx):
+            return
+        
         coin = coin.upper()
         strength = strength.capitalize()
         signal_type = signal_type.upper()
