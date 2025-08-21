@@ -18,6 +18,38 @@ class DiscordBot(AutoShardedBot):
                 continue  # Skip non-python files
 
             name = file[:-3]
+            
+            # Skip crypto_virtual_trader if VIRTUAL_TRADER_CHANNEL is blank
+            if name == "crypto_virtual_trader":
+                virtual_trader_channel = getattr(self.config, 'virtual_trader_channel', None)
+                if not virtual_trader_channel or virtual_trader_channel.strip() == "":
+                    print(f"--- Skipping {name} cog - VIRTUAL_TRADER_CHANNEL is blank")
+                    continue
+            
+            # Skip crypto if all crypto trading channels are blank
+            if name == "crypto":
+                crypto_day_trade_channel = getattr(self.config, 'crypto_day_trade_channel', None)
+                crypto_swing_trade_channel = getattr(self.config, 'crypto_swing_trade_channel', None)
+                crypto_long_term_trade_channel = getattr(self.config, 'crypto_long_term_trade_channel', None)
+                
+                # Check if all channels are empty or blank
+                all_channels_empty = (
+                    not crypto_day_trade_channel or crypto_day_trade_channel.strip() == "" and
+                    not crypto_swing_trade_channel or crypto_swing_trade_channel.strip() == "" and
+                    not crypto_long_term_trade_channel or crypto_long_term_trade_channel.strip() == ""
+                )
+                
+                if all_channels_empty:
+                    print(f"--- Skipping {name} cog - All crypto trading channels are blank")
+                    continue
+            
+            # Skip download if REQUEST_CHANNEL_NAME is blank
+            if name == "download":
+                request_channel_name = getattr(self.config, 'request_channel_name', None)
+                if not request_channel_name or request_channel_name.strip() == "":
+                    print(f"--- Skipping {name} cog - REQUEST_CHANNEL_NAME is blank")
+                    continue
+            
             await self.load_extension(f"cogs.{name}")
 
     async def on_message(self, msg: discord.Message):

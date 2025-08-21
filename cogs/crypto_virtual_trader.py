@@ -11,6 +11,15 @@ from utils.default import CustomContext
 from utils.data import DiscordBot
 from tokenometry import Tokenometry
 
+# Add PostgreSQL support
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    PSYCOPG2_AVAILABLE = True
+except ImportError:
+    PSYCOPG2_AVAILABLE = False
+    print("Warning: psycopg2 not available. PostgreSQL support disabled.")
+
 # ============================================================================
 # CONFIGURATION CLASSES
 # ============================================================================
@@ -59,21 +68,151 @@ class TradeSignal:
 # ============================================================================
 
 class DatabaseManager:
-    """Handles all database operations"""
+    """Handles all database operations for both SQLite and PostgreSQL"""
     
-    def __init__(self, db_path: str):
-        self.db_path = db_path
+    def __init__(self, bot_config):
+        self.bot_config = bot_config
         self.logger = logging.getLogger("DatabaseManager")
+        self.db_type = getattr(bot_config, 'virtual_trader_database_type', 'sqlite').lower()
+        
+        if self.db_type == 'postgres':
+            if not PSYCOPG2_AVAILABLE:
+                self.logger.error("PostgreSQL requested but psycopg2 not available. Falling back to SQLite.")
+                self.db_type = 'sqlite'
+                self.db_path = "db/virtual_trader.sqlite"
+            else:
+                self._setup_postgres_connection()
+        else:
+            # Default to SQLite
+            self.db_type = 'sqlite'
+            self.db_path = "db/virtual_trader.sqlite"
+        
+        self.logger.info(f"🚀 Initializing {self.db_type.upper()} database manager...")
         self._ensure_db_directory()
         self._create_tables()
         self._initialize_portfolio()
+        self.logger.info(f"✅ {self.db_type.upper()} database manager initialized successfully")
+    
+    def _setup_postgres_connection(self):
+        """Setup PostgreSQL connection parameters"""
+        self.pg_config = {
+            'host': getattr(self.bot_config, 'virtual_trader_database_host', '127.0.0.1'),
+            'port': getattr(self.bot_config, 'virtual_trader_database_port', 5432),
+            'database': getattr(self.bot_config, 'virtual_trader_database_name', 'virtual_trader'),
+            'user': getattr(self.bot_config, 'virtual_trader_database_user', 'trader'),
+            'password': getattr(self.bot_config, 'virtual_trader_database_password', '')
+        }
+        
+        # Test connection immediately
+        try:
+            test_conn = psycopg2.connect(**self.pg_config)
+            test_conn.close()
+            self.logger.info(f"✅ PostgreSQL connection test successful: {self.pg_config['host']}:{self.pg_config['port']}")
+        except psycopg2.OperationalError as e:
+            error_msg = str(e)
+            if "connection refused" in error_msg.lower():
+                self.logger.error(f"❌ Cannot connect to PostgreSQL: Server is not running or port {self.pg_config['port']} is closed")
+            elif "authentication failed" in error_msg.lower():
+                self.logger.error(f"❌ Cannot connect to PostgreSQL: Wrong username/password for user '{self.pg_config['user']}'")
+            elif "does not exist" in error_msg.lower():
+                self.logger.error(f"❌ Cannot connect to PostgreSQL: Database '{self.pg_config['database']}' does not exist")
+            elif "timeout" in error_msg.lower():
+                self.logger.error(f"❌ Cannot connect to PostgreSQL: Connection timeout - server may be down or firewall blocking")
+            else:
+                self.logger.error(f"❌ Cannot connect to PostgreSQL: {error_msg}")
+            raise
+        except Exception as e:
+            self.logger.error(f"❌ Cannot connect to PostgreSQL: Unexpected error - {str(e)}")
+            raise
+    
+    def _get_connection(self):
+        """Get database connection based on type"""
+        if self.db_type == 'postgres':
+            try:
+                conn = psycopg2.connect(**self.pg_config)
+                # Log successful connection on first connect
+                if not hasattr(self, '_first_connection_logged'):
+                    self.logger.info("✅ Successfully connected to PostgreSQL database!")
+                    self._first_connection_logged = True
+                return conn
+            except Exception as e:
+                self.logger.error(f"PostgreSQL connection failed: {e}")
+                raise
+        else:
+            if not hasattr(self, '_first_connection_logged'):
+                self.logger.info("✅ Successfully connected to SQLite database!")
+                self._first_connection_logged = True
+            return sqlite3.connect(self.db_path)
     
     def _ensure_db_directory(self):
-        """Ensure database directory exists"""
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        """Ensure database directory exists (for SQLite)"""
+        if self.db_type == 'sqlite':
+            db_dir = os.path.dirname(self.db_path)
+            if not os.path.exists(db_dir):
+                os.makedirs(db_dir, exist_ok=True)
+                self.logger.info(f"📁 Created database directory: {db_dir}")
+            else:
+                self.logger.info(f"📁 Using existing database directory: {db_dir}")
     
     def _create_tables(self):
         """Create all required database tables"""
+        self.logger.info(f"🔧 Setting up {self.db_type.upper()} database for virtual trading...")
+        
+        if self.db_type == 'postgres':
+            self._create_postgres_tables()
+        else:
+            self._create_sqlite_tables()
+    
+    def _create_postgres_tables(self):
+        """Create PostgreSQL tables"""
+        tables = {
+            'portfolio': '''
+                CREATE TABLE IF NOT EXISTS portfolio (
+                    id SERIAL PRIMARY KEY,
+                    coin_symbol VARCHAR(20) UNIQUE NOT NULL,
+                    amount DECIMAL(20,8) DEFAULT 0.0,
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''',
+            'transactions': '''
+                CREATE TABLE IF NOT EXISTS transactions (
+                    id SERIAL PRIMARY KEY,
+                    coin_symbol VARCHAR(20) NOT NULL,
+                    transaction_type VARCHAR(20) NOT NULL,
+                    amount DECIMAL(20,8) NOT NULL,
+                    price DECIMAL(20,8) NOT NULL,
+                    total_value DECIMAL(20,8) NOT NULL,
+                    strategy_type VARCHAR(50) NOT NULL,
+                    signal_id VARCHAR(100),
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''',
+            'signals': '''
+                CREATE TABLE IF NOT EXISTS signals (
+                    id SERIAL PRIMARY KEY,
+                    strategy_name VARCHAR(50) NOT NULL,
+                    coin_symbol VARCHAR(20) NOT NULL,
+                    signal_type VARCHAR(20) NOT NULL,
+                    signal_strength VARCHAR(20) NOT NULL,
+                    price DECIMAL(20,8) NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    executed BOOLEAN DEFAULT FALSE,
+                    execution_timestamp TIMESTAMP NULL,
+                    notes TEXT
+                )
+            '''
+        }
+        
+        with self._get_connection() as conn:
+            with conn.cursor() as cursor:
+                for table_name, sql in tables.items():
+                    cursor.execute(sql)
+                    self.logger.debug(f"Created/verified PostgreSQL table: {table_name}")
+                conn.commit()
+                self.logger.info("PostgreSQL database tables created/verified successfully")
+    
+    def _create_sqlite_tables(self):
+        """Create SQLite tables"""
         tables = {
             'portfolio': '''
                 CREATE TABLE IF NOT EXISTS portfolio (
@@ -112,74 +251,147 @@ class DatabaseManager:
             '''
         }
         
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            for table_name, sql in tables.items():
-                cursor.execute(sql)
-                self.logger.debug(f"Created/verified table: {table_name}")
+        # SQLite cursors don't support context manager
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        for table_name, sql in tables.items():
+            cursor.execute(sql)
+            self.logger.debug(f"Created/verified SQLite table: {table_name}")
+        cursor.close()
+        conn.commit()
+        conn.close()
+        self.logger.info("SQLite database tables created/verified successfully")
     
     def _initialize_portfolio(self):
         """Initialize portfolio with starting USD balance"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            
-            # Check if USD already exists
-            cursor.execute('SELECT amount FROM portfolio WHERE coin_symbol = ?', ('USD',))
-            if not cursor.fetchone():
-                # Initialize with 10,000 USD
-                cursor.execute('''
-                    INSERT INTO portfolio (coin_symbol, amount, last_updated)
-                    VALUES (?, ?, CURRENT_TIMESTAMP)
-                ''', ('USD', 10000.0))
-                
-                # Log initial transaction
-                cursor.execute('''
-                    INSERT INTO transactions 
-                    (coin_symbol, transaction_type, amount, price, total_value, strategy_type, signal_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', ('USD', 'INITIAL', 10000.0, 1.0, 10000.0, 'SYSTEM', 'initial_setup'))
-                
-                self.logger.info("Initialized portfolio with 10,000 USD")
+        with self._get_connection() as conn:
+            if self.db_type == 'postgres':
+                with conn.cursor() as cursor:
+                    # Check if USD already exists
+                    cursor.execute('SELECT amount FROM portfolio WHERE coin_symbol = %s', ('USD',))
+                    if not cursor.fetchone():
+                        # Initialize with 10,000 USD
+                        cursor.execute('''
+                            INSERT INTO portfolio (coin_symbol, amount, last_updated)
+                            VALUES (%s, %s, CURRENT_TIMESTAMP)
+                        ''', ('USD', 10000.0))
+                        
+                        # Log initial transaction
+                        cursor.execute('''
+                            INSERT INTO transactions 
+                            (coin_symbol, transaction_type, amount, price, total_value, strategy_type, signal_id)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        ''', ('USD', 'INITIAL', 10000.0, 1.0, 10000.0, 'SYSTEM', 'initial_setup'))
+                        
+                        self.logger.info("🎉 First time setup: Initialized PostgreSQL portfolio with 10,000 USD")
+                        conn.commit()
+                    else:
+                        self.logger.info("✅ PostgreSQL portfolio already initialized")
+            else:
+                # SQLite cursors don't support context manager
+                cursor = conn.cursor()
+                # Check if USD already exists
+                cursor.execute('SELECT amount FROM portfolio WHERE coin_symbol = ?', ('USD',))
+                if not cursor.fetchone():
+                    # Initialize with 10,000 USD
+                    cursor.execute('''
+                        INSERT INTO portfolio (coin_symbol, amount, last_updated)
+                        VALUES (?, ?, CURRENT_TIMESTAMP)
+                    ''', ('USD', 10000.0))
+                    
+                    # Log initial transaction
+                    cursor.execute('''
+                        INSERT INTO transactions 
+                        (coin_symbol, transaction_type, amount, price, total_value, strategy_type, signal_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', ('USD', 'INITIAL', 10000.0, 1.0, 10000.0, 'SYSTEM', 'initial_setup'))
+                    
+                    self.logger.info("🎉 First time setup: Initialized SQLite portfolio with 10,000 USD")
+                    conn.commit()
+                else:
+                    self.logger.info("✅ SQLite portfolio already initialized")
+                cursor.close()
     
     def get_coin_balance(self, coin_symbol: str) -> float:
         """Get current balance of a coin"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT amount FROM portfolio WHERE coin_symbol = ?', (coin_symbol,))
-            result = cursor.fetchone()
-            return result[0] if result else 0.0
+        with self._get_connection() as conn:
+            if self.db_type == 'postgres':
+                with conn.cursor() as cursor:
+                    cursor.execute('SELECT amount FROM portfolio WHERE coin_symbol = %s', (coin_symbol,))
+                    result = cursor.fetchone()
+                    return float(result[0]) if result else 0.0
+            else:
+                # SQLite cursors don't support context manager
+                cursor = conn.cursor()
+                cursor.execute('SELECT amount FROM portfolio WHERE coin_symbol = ?', (coin_symbol,))
+                result = cursor.fetchone()
+                cursor.close()
+                return result[0] if result else 0.0
     
     def update_coin_balance(self, coin_symbol: str, new_amount: float):
         """Update coin balance in portfolio"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT OR REPLACE INTO portfolio (coin_symbol, amount, last_updated)
-                VALUES (?, ?, CURRENT_TIMESTAMP)
-            ''', (coin_symbol, new_amount))
+        with self._get_connection() as conn:
+            if self.db_type == 'postgres':
+                with conn.cursor() as cursor:
+                    cursor.execute('''
+                        INSERT INTO portfolio (coin_symbol, amount, last_updated)
+                        VALUES (%s, %s, CURRENT_TIMESTAMP)
+                        ON CONFLICT (coin_symbol) DO UPDATE SET
+                        amount = EXCLUDED.amount,
+                        last_updated = CURRENT_TIMESTAMP
+                    ''', (coin_symbol, new_amount))
+            else:
+                # SQLite cursors don't support context manager
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT OR REPLACE INTO portfolio (coin_symbol, amount, last_updated)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                ''', (coin_symbol, new_amount))
+                cursor.close()
     
     def log_transaction(self, coin_symbol: str, transaction_type: str, amount: float, 
                        price: float, strategy_type: str, signal_id: Optional[str] = None):
         """Log a transaction to the database"""
         total_value = amount * price
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO transactions 
-                (coin_symbol, transaction_type, amount, price, total_value, strategy_type, signal_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (coin_symbol, transaction_type, amount, price, total_value, strategy_type, signal_id))
+        with self._get_connection() as conn:
+            if self.db_type == 'postgres':
+                with conn.cursor() as cursor:
+                    cursor.execute('''
+                        INSERT INTO transactions 
+                        (coin_symbol, transaction_type, amount, price, total_value, strategy_type, signal_id)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ''', (coin_symbol, transaction_type, amount, price, total_value, strategy_type, signal_id))
+            else:
+                # SQLite cursors don't support context manager
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO transactions 
+                    (coin_symbol, transaction_type, amount, price, total_value, strategy_type, signal_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (coin_symbol, transaction_type, amount, price, total_value, strategy_type, signal_id))
+                cursor.close()
     
     def save_signal(self, signal: TradeSignal):
         """Save a trading signal to the database"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO signals 
-                (strategy_name, coin_symbol, signal_type, signal_strength, price, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (signal.strategy_name, signal.coin_symbol, signal.signal_type, 
-                  signal.signal_strength, signal.price, signal.timestamp))
+        with self._get_connection() as conn:
+            if self.db_type == 'postgres':
+                with conn.cursor() as cursor:
+                    cursor.execute('''
+                        INSERT INTO signals 
+                        (strategy_name, coin_symbol, signal_type, signal_strength, price, timestamp)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    ''', (signal.strategy_name, signal.coin_symbol, signal.signal_type, 
+                          signal.signal_strength, signal.price, signal.timestamp))
+            else:
+                # SQLite cursors don't support context manager
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO signals 
+                    (strategy_name, coin_symbol, signal_type, signal_strength, price, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (signal.strategy_name, signal.coin_symbol, signal.signal_type, 
+                      signal.signal_strength, signal.price, signal.timestamp))
+                cursor.close()
     
     def get_signals(self, strategy_name: Optional[str] = None, coin_symbol: Optional[str] = None, 
                    limit: int = 10) -> List[Tuple]:
@@ -188,42 +400,75 @@ class DatabaseManager:
         params = []
         
         if strategy_name:
-            query += ' AND strategy_name = ?'
+            query += ' AND strategy_name = %s' if self.db_type == 'postgres' else ' AND strategy_name = ?'
             params.append(strategy_name)
         if coin_symbol:
-            query += ' AND coin_symbol = ?'
+            query += ' AND coin_symbol = %s' if self.db_type == 'postgres' else ' AND coin_symbol = ?'
             params.append(coin_symbol)
         
-        query += ' ORDER BY timestamp DESC LIMIT ?'
+        query += ' ORDER BY timestamp DESC LIMIT %s' if self.db_type == 'postgres' else ' ORDER BY timestamp DESC LIMIT ?'
         params.append(limit)
         
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(query, params)
-            return cursor.fetchall()
+        with self._get_connection() as conn:
+            if self.db_type == 'postgres':
+                with conn.cursor() as cursor:
+                    cursor.execute(query, params)
+                    return cursor.fetchall()
+            else:
+                # SQLite cursors don't support context manager
+                cursor = conn.cursor()
+                cursor.execute(query, params)
+                result = cursor.fetchall()
+                cursor.close()
+                return result
     
     def get_portfolio_summary(self) -> List[Tuple]:
         """Get summary of all coin holdings"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT coin_symbol, amount, last_updated FROM portfolio WHERE amount > 0')
-            return cursor.fetchall()
+        with self._get_connection() as conn:
+            if self.db_type == 'postgres':
+                with conn.cursor() as cursor:
+                    cursor.execute('SELECT coin_symbol, amount, last_updated FROM portfolio WHERE amount > 0')
+                    return cursor.fetchall()
+            else:
+                # SQLite cursors don't support context manager
+                cursor = conn.cursor()
+                cursor.execute('SELECT coin_symbol, amount, last_updated FROM portfolio WHERE amount > 0')
+                result = cursor.fetchall()
+                cursor.close()
+                return result
     
     def get_transaction_history(self, coin_symbol: Optional[str] = None, limit: int = 10) -> List[Tuple]:
         """Get recent transaction history"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            if coin_symbol:
-                cursor.execute('''
-                    SELECT coin_symbol, transaction_type, amount, price, total_value, strategy_type, timestamp
-                    FROM transactions WHERE coin_symbol = ? ORDER BY timestamp DESC LIMIT ?
-                ''', (coin_symbol, limit))
+        with self._get_connection() as conn:
+            if self.db_type == 'postgres':
+                with conn.cursor() as cursor:
+                    if coin_symbol:
+                        cursor.execute('''
+                            SELECT coin_symbol, transaction_type, amount, price, total_value, strategy_type, timestamp
+                            FROM transactions WHERE coin_symbol = %s ORDER BY timestamp DESC LIMIT %s
+                        ''', (coin_symbol, limit))
+                    else:
+                        cursor.execute('''
+                            SELECT coin_symbol, transaction_type, amount, price, total_value, strategy_type, timestamp
+                            FROM transactions ORDER BY timestamp DESC LIMIT %s
+                        ''', (limit,))
+                    return cursor.fetchall()
             else:
-                cursor.execute('''
-                    SELECT coin_symbol, transaction_type, amount, price, total_value, strategy_type, timestamp
-                    FROM transactions ORDER BY timestamp DESC LIMIT ?
-                ''', (limit,))
-            return cursor.fetchall()
+                # SQLite cursors don't support context manager
+                cursor = conn.cursor()
+                if coin_symbol:
+                    cursor.execute('''
+                        SELECT coin_symbol, transaction_type, amount, price, total_value, strategy_type, timestamp
+                        FROM transactions WHERE coin_symbol = ? ORDER BY timestamp DESC LIMIT ?
+                    ''', (coin_symbol, limit))
+                else:
+                    cursor.execute('''
+                        SELECT coin_symbol, transaction_type, amount, price, total_value, strategy_type, timestamp
+                        FROM transactions ORDER BY timestamp DESC LIMIT ?
+                    ''', (limit,))
+                result = cursor.fetchall()
+                cursor.close()
+                return result
 
 # ============================================================================
 # PRICE MANAGER
@@ -270,15 +515,17 @@ class TradingEngine:
         
         total_usd_cost = amount * price
         usd_balance = self.db.get_coin_balance("USD")
+        usd_balance_float = float(usd_balance)
         
-        if usd_balance < total_usd_cost:
-            self.logger.warning(f"Insufficient USD balance: {usd_balance:.2f} < {total_usd_cost:.2f}")
+        if usd_balance_float < total_usd_cost:
+            self.logger.warning(f"Insufficient USD balance: {usd_balance_float:.2f} < {total_usd_cost:.2f}")
             return False
         
         # Execute the trade
-        self.db.update_coin_balance("USD", usd_balance - total_usd_cost)
+        self.db.update_coin_balance("USD", usd_balance_float - total_usd_cost)
         current_balance = self.db.get_coin_balance(coin_symbol)
-        self.db.update_coin_balance(coin_symbol, current_balance + amount)
+        current_balance_float = float(current_balance)
+        self.db.update_coin_balance(coin_symbol, current_balance_float + amount)
         
         # Log transactions
         self.db.log_transaction(coin_symbol, "BUY", amount, price, strategy_type, signal_id)
@@ -295,16 +542,18 @@ class TradingEngine:
             return False
         
         current_balance = self.db.get_coin_balance(coin_symbol)
-        if current_balance < amount:
-            self.logger.warning(f"Insufficient balance for {coin_symbol}: {current_balance} < {amount}")
+        current_balance_float = float(current_balance)
+        if current_balance_float < amount:
+            self.logger.warning(f"Insufficient balance for {coin_symbol}: {current_balance_float} < {amount}")
             return False
         
         total_usd_value = amount * price
         
         # Execute the trade
-        self.db.update_coin_balance(coin_symbol, current_balance - amount)
+        self.db.update_coin_balance(coin_symbol, current_balance_float - amount)
         usd_balance = self.db.get_coin_balance("USD")
-        self.db.update_coin_balance("USD", usd_balance + total_usd_value)
+        usd_balance_float = float(usd_balance)
+        self.db.update_coin_balance("USD", usd_balance_float + total_usd_value)
         
         # Log transactions
         self.db.log_transaction(coin_symbol, "SELL", amount, price, strategy_type, signal_id)
@@ -587,7 +836,7 @@ class CryptoVirtualTrader(commands.Cog):
         self.logger = logging.getLogger("CryptoVirtualTrader")
         
         # Initialize components
-        self.db_manager = DatabaseManager("db/virtual_trader.sqlite")
+        self.db_manager = DatabaseManager(bot.config)
         self.price_manager = PriceManager()
         self.trading_engine = TradingEngine(self.db_manager, self.price_manager)
         self.strategy_manager = StrategyManager()
@@ -601,6 +850,8 @@ class CryptoVirtualTrader(commands.Cog):
         # Start signal monitoring
         self.signal_monitor.start()
         self.signal_monitor_task.start()
+    
+
     
     def cog_unload(self):
         """Cleanup when cog is unloaded"""
@@ -665,21 +916,24 @@ class CryptoVirtualTrader(commands.Cog):
         total_value_usd = 0.0
         
         for coin_symbol, amount, last_updated in portfolio:
+            # Convert decimal.Decimal to float for calculations
+            amount_float = float(amount)
+            
             if coin_symbol == "USD":
-                total_value_usd += amount
+                total_value_usd += amount_float
                 embed.add_field(
                     name=f"💰 {coin_symbol}",
-                    value=f"**Balance:** ${amount:,.2f}\n**Type:** Main Wallet",
+                    value=f"**Balance:** ${amount_float:,.2f}\n**Type:** Main Wallet",
                     inline=True
                 )
             else:
                 current_price = self.price_manager.get_current_price(coin_symbol)
                 if current_price:
-                    coin_value_usd = amount * current_price
+                    coin_value_usd = amount_float * current_price
                     total_value_usd += coin_value_usd
                     embed.add_field(
                         name=f"🪙 {coin_symbol}",
-                        value=f"**Amount:** {amount:.6f}\n**Price:** ${current_price:.2f}\n**Value:** ${coin_value_usd:.2f}",
+                        value=f"**Amount:** {amount_float:.6f}\n**Price:** ${current_price:.2f}\n**Value:** ${coin_value_usd:.2f}",
                         inline=True
                     )
         
@@ -705,14 +959,17 @@ class CryptoVirtualTrader(commands.Cog):
             timestamp=discord.utils.utcnow()
         )
         
+        # Convert decimal.Decimal to float for calculations
+        balance_float = float(balance)
+        
         if coin_symbol == "USD":
-            embed.add_field(name="Balance", value=f"${balance:,.2f}", inline=True)
+            embed.add_field(name="Balance", value=f"${balance_float:,.2f}", inline=True)
             embed.add_field(name="Type", value="Main Wallet", inline=True)
         else:
-            embed.add_field(name="Amount", value=f"{balance:.6f}", inline=True)
+            embed.add_field(name="Amount", value=f"{balance_float:.6f}", inline=True)
             current_price = self.price_manager.get_current_price(coin_symbol)
             if current_price:
-                value_usd = balance * current_price
+                value_usd = balance_float * current_price
                 embed.add_field(name="Current Price", value=f"${current_price:.2f}", inline=True)
                 embed.add_field(name="Value in USD", value=f"${value_usd:.2f}", inline=True)
         
@@ -734,9 +991,10 @@ class CryptoVirtualTrader(commands.Cog):
         
         # Check if we have enough USD for the purchase
         usd_balance = self.db_manager.get_coin_balance("USD")
+        usd_balance_float = float(usd_balance)
         
-        if usd_balance < usd_amount:
-            await ctx.send(f"❌ **Insufficient USD Balance:** You need ${usd_amount:.2f} USD but only have ${usd_balance:.2f} USD")
+        if usd_balance_float < usd_amount:
+            await ctx.send(f"❌ **Insufficient USD Balance:** You need ${usd_amount:.2f} USD but only have ${usd_balance_float:.2f} USD")
             return
         
         # Get current price from Coinbase
@@ -761,8 +1019,8 @@ class CryptoVirtualTrader(commands.Cog):
                 embed.add_field(name="USD Spent", value=f"${usd_amount:.2f} USD", inline=True)
                 embed.add_field(name="Current Price", value=f"${current_price:.2f}", inline=True)
                 embed.add_field(name="Crypto Amount", value=f"{crypto_amount:.8f} {coin_symbol}", inline=True)
-                embed.add_field(name="New Balance", value=f"{self.db_manager.get_coin_balance(coin_symbol):.8f} {coin_symbol}", inline=True)
-                embed.add_field(name="USD Balance", value=f"{self.db_manager.get_coin_balance('USD'):.2f} USD", inline=True)
+                embed.add_field(name="New Balance", value=f"{float(self.db_manager.get_coin_balance(coin_symbol)):.8f} {coin_symbol}", inline=True)
+                embed.add_field(name="USD Balance", value=f"{float(self.db_manager.get_coin_balance('USD')):.2f} USD", inline=True)
                 
                 await ctx.send(embed=embed)
             else:
@@ -788,9 +1046,10 @@ class CryptoVirtualTrader(commands.Cog):
         
         # Check if we have enough of the crypto to sell
         current_balance = self.db_manager.get_coin_balance(coin_symbol)
+        current_balance_float = float(current_balance)
         
-        if current_balance < crypto_amount:
-            await ctx.send(f"❌ **Insufficient Balance:** You only have {current_balance:.8f} {coin_symbol}")
+        if current_balance_float < crypto_amount:
+            await ctx.send(f"❌ **Insufficient Balance:** You only have {current_balance_float:.8f} {coin_symbol}")
             return
         
         # Get current price from Coinbase
@@ -815,8 +1074,8 @@ class CryptoVirtualTrader(commands.Cog):
                 embed.add_field(name="Crypto Amount", value=f"{crypto_amount:.8f} {coin_symbol}", inline=True)
                 embed.add_field(name="Current Price", value=f"${current_price:.2f}", inline=True)
                 embed.add_field(name="USD Received", value=f"${usd_value:.2f} USD", inline=True)
-                embed.add_field(name="Remaining Balance", value=f"{self.db_manager.get_coin_balance(coin_symbol):.8f} {coin_symbol}", inline=True)
-                embed.add_field(name="USD Balance", value=f"{self.db_manager.get_coin_balance('USD'):.2f} USD", inline=True)
+                embed.add_field(name="Remaining Balance", value=f"{float(self.db_manager.get_coin_balance(coin_symbol)):.8f} {coin_symbol}", inline=True)
+                embed.add_field(name="USD Balance", value=f"{float(self.db_manager.get_coin_balance('USD')):.2f} USD", inline=True)
                 
                 await ctx.send(embed=embed)
             else:
@@ -829,6 +1088,9 @@ class CryptoVirtualTrader(commands.Cog):
     @trader.command()
     async def history(self, ctx: CustomContext, coin_symbol: str = None, limit: int = 10):
         """View transaction history"""
+        if not await self._check_channel(ctx):
+            return
+        
         transactions = self.db_manager.get_transaction_history(coin_symbol, limit)
         
         if not transactions:

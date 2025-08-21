@@ -7,3 +7,5 @@ pytz
 selenium>=4.15.0
 webdriver-manager>=4.0.0
 tokenometry>=1.0.7
+psycopg2-binary>=2.9.0
+psycopg2>=2.9.0

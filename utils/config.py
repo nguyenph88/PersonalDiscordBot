@@ -33,6 +33,14 @@ class Config:
     
     # Virtual trader channel
     virtual_trader_channel: str = "virtual-trader"
+    
+    # Virtual trader database configuration
+    virtual_trader_database_type: str = "sqlite"
+    virtual_trader_database_port: int = 3306
+    virtual_trader_database_host: str = "127.0.0.1"
+    virtual_trader_database_name: str = "virtualtrader"
+    virtual_trader_database_user: str = "trader"
+    virtual_trader_database_password: str = ""
 
     @classmethod
     def from_dict(self, **kwargs) -> "Config":
@@ -62,7 +70,7 @@ class Config:
         if not os.path.exists(filename):
             print(f"Warning: {filename} file not found. Please create it with the required environment variables.")
             print("Required variables: DISCORD_TOKEN, DISCORD_PREFIX, DISCORD_OWNER_ID, DISCORD_JOIN_MESSAGE, DISCORD_ACTIVITY_NAME, DISCORD_ACTIVITY_TYPE, DISCORD_STATUS_TYPE")
-            print("Optional variables: ALLDEBRID_API_KEY, REQUEST_CHANNEL_NAME, REQUEST_CHANNEL_PURGE_HOURS, CRYPTO_DAY_TRADE_CHANNEL, CRYPTO_SWING_TRADE_CHANNEL, CRYPTO_LONG_TERM_TRADE_CHANNEL, VIRTUAL_TRADER_CHANNEL")
+            print("Optional variables: ALLDEBRID_API_KEY, REQUEST_CHANNEL_NAME, REQUEST_CHANNEL_PURGE_HOURS, CRYPTO_DAY_TRADE_CHANNEL, CRYPTO_SWING_TRADE_CHANNEL, CRYPTO_LONG_TERM_TRADE_CHANNEL, VIRTUAL_TRADER_CHANNEL, VIRTUAL_TRADER_DATABASE_TYPE, VIRTUAL_TRADER_DATABASE_PORT, VIRTUAL_TRADER_DATABASE_HOST, VIRTUAL_TRADER_DATABASE_NAME, VIRTUAL_TRADER_DATABASE_USER, VIRTUAL_TRADER_DATABASE_PASSWORD")
             raise FileNotFoundError(f"{filename} file not found. Please create it with the required environment variables.")
         
         return Config.from_dict(**dotenv_values(filename))
