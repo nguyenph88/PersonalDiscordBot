@@ -41,6 +41,16 @@ class Config:
     virtual_trader_database_name: str = "virtualtrader"
     virtual_trader_database_user: str = "trader"
     virtual_trader_database_password: str = ""
+    
+    # Virtual trader strategy coin configurations
+    virtual_trader_day_strategy_coins: str = "AVAX-USD,SOL-USD,ADA-USD,GRT-USD,CRV-USD"
+    virtual_trader_swing_strategy_coins: str = "MATIC-USD,QNT-USD,LCX-USD"
+    virtual_trader_long_strategy_coins: str = "AVAX-USD,CHZ-USD,ICP-USD"
+    
+    # Crypto strategy coin configurations
+    crypto_day_strategy_coins: str = "GRT-USD,AVAX-USD,CRV-USD"
+    crypto_swing_strategy_coins: str = "GRT-USD,AVAX-USD,CRV-USD"
+    crypto_long_strategy_coins: str = "CRV-USD,GRT-USD,ADA-USD,MATIC-USD"
 
     @classmethod
     def from_dict(self, **kwargs) -> "Config":
@@ -53,6 +63,18 @@ class Config:
                 new_key = "request_channel_name"
             elif k == "REQUEST_CHANNEL_PURGE_HOURS":
                 new_key = "request_channel_purge_hours"
+            elif k == "VIRTUAL_TRADER_DAY_STRATEGY_COINS":
+                new_key = "virtual_trader_day_strategy_coins"
+            elif k == "VIRTUAL_TRADER_SWING_STRATEGY_COINS":
+                new_key = "virtual_trader_swing_strategy_coins"
+            elif k == "VIRTUAL_TRADER_LONG_STRATEGY_COINS":
+                new_key = "virtual_trader_long_strategy_coins"
+            elif k == "CRYPTO_DAY_STRATEGY_COINS":
+                new_key = "crypto_day_strategy_coins"
+            elif k == "CRYPTO_SWING_STRATEGY_COINS":
+                new_key = "crypto_swing_strategy_coins"
+            elif k == "CRYPTO_LONG_STRATEGY_COINS":
+                new_key = "crypto_long_strategy_coins"
             else:
                 new_key = k.lower()
 
@@ -70,7 +92,7 @@ class Config:
         if not os.path.exists(filename):
             print(f"Warning: {filename} file not found. Please create it with the required environment variables.")
             print("Required variables: DISCORD_TOKEN, DISCORD_PREFIX, DISCORD_OWNER_ID, DISCORD_JOIN_MESSAGE, DISCORD_ACTIVITY_NAME, DISCORD_ACTIVITY_TYPE, DISCORD_STATUS_TYPE")
-            print("Optional variables: ALLDEBRID_API_KEY, REQUEST_CHANNEL_NAME, REQUEST_CHANNEL_PURGE_HOURS, CRYPTO_DAY_TRADE_CHANNEL, CRYPTO_SWING_TRADE_CHANNEL, CRYPTO_LONG_TERM_TRADE_CHANNEL, VIRTUAL_TRADER_CHANNEL, VIRTUAL_TRADER_DATABASE_TYPE, VIRTUAL_TRADER_DATABASE_PORT, VIRTUAL_TRADER_DATABASE_HOST, VIRTUAL_TRADER_DATABASE_NAME, VIRTUAL_TRADER_DATABASE_USER, VIRTUAL_TRADER_DATABASE_PASSWORD")
+            print("Optional variables: ALLDEBRID_API_KEY, REQUEST_CHANNEL_NAME, REQUEST_CHANNEL_PURGE_HOURS, CRYPTO_DAY_TRADE_CHANNEL, CRYPTO_SWING_TRADE_CHANNEL, CRYPTO_LONG_TERM_TRADE_CHANNEL, CRYPTO_DAY_STRATEGY_COINS, CRYPTO_SWING_STRATEGY_COINS, CRYPTO_LONG_STRATEGY_COINS, VIRTUAL_TRADER_CHANNEL, VIRTUAL_TRADER_DATABASE_TYPE, VIRTUAL_TRADER_DATABASE_PORT, VIRTUAL_TRADER_DATABASE_HOST, VIRTUAL_TRADER_DATABASE_NAME, VIRTUAL_TRADER_DATABASE_USER, VIRTUAL_TRADER_DATABASE_PASSWORD, VIRTUAL_TRADER_DAY_STRATEGY_COINS, VIRTUAL_TRADER_SWING_STRATEGY_COINS, VIRTUAL_TRADER_LONG_STRATEGY_COINS")
             raise FileNotFoundError(f"{filename} file not found. Please create it with the required environment variables.")
         
         return Config.from_dict(**dotenv_values(filename))

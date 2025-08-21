@@ -218,12 +218,36 @@ class CryptoCommands(commands.Cog):
         self.logger.setLevel(logging.INFO)
         
         # Strategy configurations
-        self.strategies = {
+        self.strategies = self._create_strategies_from_env()
+    
+    def _get_product_ids_from_env(self, env_var_name: str, default_coins: list) -> list:
+        """Get product IDs from environment variable with fallback to defaults"""
+        try:
+            # Get the environment variable value
+            env_value = getattr(self.bot.config, env_var_name, None)
+            
+            if not env_value or env_value.strip() == "":
+                print(f"📝 Using default coins for {env_var_name}: {default_coins}")
+                return default_coins
+            
+            # Parse pipe-separated values
+            coins = [coin.strip() for coin in env_value.split('|') if coin.strip()]
+            
+            print(f"📝 Parsed coins from {env_var_name}: {coins}")
+            return coins if coins else default_coins
+            
+        except Exception as e:
+            print(f"⚠️ Error parsing {env_var_name}: {e}. Using defaults: {default_coins}")
+            return default_coins
+    
+    def _create_strategies_from_env(self):
+        """Create strategy configurations with product IDs from environment variables"""
+        return {
             "day": {
                 "name": "Day Trader",
                 "config": {
                     "STRATEGY_NAME": "Day Trader",
-                    "PRODUCT_IDS": ["GRT-USD", "AVAX-USD", "CRV-USD"],
+                    "PRODUCT_IDS": self._get_product_ids_from_env("crypto_day_strategy_coins", ["GRT-USD", "AVAX-USD", "CRV-USD"]),
                     "GRANULARITY_SIGNAL": "FIVE_MINUTE",
                     "GRANULARITY_TREND": "ONE_HOUR",
                     "GRANULARITY_SECONDS": {
@@ -258,7 +282,7 @@ class CryptoCommands(commands.Cog):
                 "name": "Aggressive Swing Trader",
                 "config": {
                     "STRATEGY_NAME": "Aggressive Swing Trader",
-                    "PRODUCT_IDS": ["GRT-USD", "AVAX-USD", "CRV-USD"],
+                    "PRODUCT_IDS": self._get_product_ids_from_env("crypto_swing_strategy_coins", ["GRT-USD", "AVAX-USD", "CRV-USD"]),
                     "GRANULARITY_SIGNAL": "FOUR_HOUR",
                     "GRANULARITY_TREND": "ONE_DAY",
                     "GRANULARITY_SECONDS": {
@@ -294,7 +318,7 @@ class CryptoCommands(commands.Cog):
                 "name": "Long-Term Investor",
                 "config": {
                     "STRATEGY_NAME": "Long-Term Investor",
-                    "PRODUCT_IDS": ["CRV-USD", "GRT-USD", "ADA-USD", "MATIC-USD"],
+                    "PRODUCT_IDS": self._get_product_ids_from_env("crypto_long_strategy_coins", ["CRV-USD", "GRT-USD", "ADA-USD", "MATIC-USD"]),
                     "GRANULARITY_SIGNAL": "ONE_DAY",
                     "GRANULARITY_TREND": "ONE_WEEK",
                     "GRANULARITY_SECONDS": {
@@ -386,11 +410,12 @@ class CryptoCommands(commands.Cog):
     
     def cog_unload(self):
         """Cleanup when cog is unloaded"""
-        for strategy in self.strategy_objects.values():
-            if strategy.scanner_task:
-                strategy.scanner_task.cancel()
-            if strategy.scanner:
-                strategy.scanner = None
+        if hasattr(self, 'strategy_objects'):
+            for strategy in self.strategy_objects.values():
+                if strategy.scanner_task:
+                    strategy.scanner_task.cancel()
+                if strategy.scanner:
+                    strategy.scanner = None
     
     @commands.command(name="crypto")
     async def crypto_command(self, ctx, action: str = None, *, args: str = None):
