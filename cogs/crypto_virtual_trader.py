@@ -593,8 +593,8 @@ class StrategyManager:
                 print(f"📝 Using default coins for {env_var_name}: {default_coins}")
                 return default_coins
             
-            # Parse pipe-separated values
-            coins = [coin.strip() for coin in env_value.split('|') if coin.strip()]
+            # Parse pipe- or comma-separated values (config defaults use commas)
+            coins = [coin.strip() for coin in env_value.replace(',', '|').split('|') if coin.strip()]
             
             print(f"📝 Parsed coins from {env_var_name}: {coins}")
             return coins if coins else default_coins
