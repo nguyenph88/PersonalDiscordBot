@@ -1,3 +1,4 @@
+import asyncio
 import discord
 from discord.ext import commands, tasks
 import logging
@@ -104,9 +105,6 @@ class TradingStrategy:
         # Tag owner and send
         owner_mention = f"<@{self.bot.config.discord_owner_id}>"
         await self.channel.send(f"{owner_mention} 🚨 {self.name} signals detected!", embed=embed)
-        
-        # Send DM to owner
-        await self.send_owner_dm(signals, current_prices)
     
     async def send_status_update(self, message):
         """Send a status update to the channel"""
@@ -129,43 +127,6 @@ class TradingStrategy:
             embed.add_field(name="💰 Market Prices", value=price_text, inline=False)
         
         await self.channel.send(embed=embed)
-    
-    async def send_owner_dm(self, signals, current_prices):
-        """Send a direct message to the bot owner"""
-        try:
-            owner = self.bot.get_user(self.bot.config.discord_owner_id)
-            if not owner:
-                self.logger.error("Could not find bot owner")
-                return
-            
-            embed = discord.Embed(
-                title=f"🚨 {self.name.upper()} SIGNALS",
-                description=f"**{len(signals)} new {self.name.lower()} signals detected!**",
-                color=discord.Color.red(),
-                timestamp=discord.utils.utcnow()
-            )
-            
-            # Add current prices
-            if current_prices:
-                price_text = "**Current Market Prices:**\n"
-                for asset, price in current_prices.items():
-                    price_text += f"• {asset}: ${price:.2f}\n"
-                embed.add_field(name="💰 Prices", value=price_text, inline=False)
-            
-            # Add signal summary
-            signal_summary = ""
-            for signal in signals:
-                emoji = "🟢" if signal['signal'] == 'BUY' else "🔴"
-                signal_summary += f"{emoji} **{signal['signal']}** {signal['asset']} @ ${signal['close_price']:.2f}\n"
-            
-            embed.add_field(name="📊 Signals", value=signal_summary, inline=False)
-            embed.set_footer(text=f"Check the {self.name.lower()}-trade channel for full details")
-            
-            await owner.send(embed=embed)
-            self.logger.info(f"Sent {self.name} signal DM to owner {owner.name}")
-            
-        except Exception as e:
-            self.logger.error(f"Error sending DM to owner: {e}")
     
     def get_embed_color(self):
         """Get the embed color for this strategy"""
@@ -199,13 +160,15 @@ class TradingStrategy:
         
         try:
             self.logger.info(f"Executing scan for {self.name}")
-            signals = self.scanner.scan()
+            # Run the blocking scan in a thread so it doesn't stall the bot's event loop
+            signals = await asyncio.to_thread(self.scanner.scan)
             self.logger.info(f"Scan completed for {self.name}, found {len(signals) if signals else 0} signals")
-            
+
             if signals:
                 await self.send_signals(signals)
             else:
-                await self.send_status_update(f"No actionable {self.name.lower()} signals found")
+                # Log only - posting "no signals" to the channel on every scan is just spam
+                self.logger.info(f"No actionable {self.name.lower()} signals found")
                 
         except Exception as e:
             self.logger.error(f"Error during {self.name.lower()} scan: {e}")
@@ -276,7 +239,7 @@ class CryptoCommands(commands.Cog):
                     "RISK_PER_TRADE_PERCENTAGE": 0.5,
                     "ATR_STOP_LOSS_MULTIPLIER": 2.0,
                 },
-                "interval": 5  # minutes
+                "interval": 5  # minutes (matches FIVE_MINUTE signal candles)
             },
             "swing": {
                 "name": "Aggressive Swing Trader",
@@ -312,7 +275,7 @@ class CryptoCommands(commands.Cog):
                     "RISK_PER_TRADE_PERCENTAGE": 1.0,
                     "ATR_STOP_LOSS_MULTIPLIER": 2.5,
                 },
-                "interval": 4  # hours
+                "interval": 240  # minutes (4 hours, matches FOUR_HOUR signal candles)
             },
             "long": {
                 "name": "Long-Term Investor",
@@ -348,7 +311,7 @@ class CryptoCommands(commands.Cog):
                     "RISK_PER_TRADE_PERCENTAGE": 1.0,
                     "ATR_STOP_LOSS_MULTIPLIER": 2.5,
                 },
-                "interval": 24  # hours
+                "interval": 1440  # minutes (24 hours, matches ONE_DAY signal candles)
             }
         }
         
@@ -383,14 +346,11 @@ class CryptoCommands(commands.Cog):
         """Start all scanner tasks"""
         self.logger.info("Starting scanner tasks...")
         for key, strategy in self.strategy_objects.items():
-            interval = self.strategies[key]["interval"]
-            self.logger.info(f"Initializing {strategy.name} scanner with {interval} {'minutes' if interval < 60 else 'hours'} interval")
-            
-            if interval < 60:  # minutes
-                task = self.create_scanner_task(strategy, minutes=interval)
-            else:  # hours
-                task = self.create_scanner_task(strategy, hours=interval)
-            
+            interval = self.strategies[key]["interval"]  # always minutes
+            self.logger.info(f"Initializing {strategy.name} scanner with {interval} minute interval")
+
+            task = self.create_scanner_task(strategy, minutes=interval)
+
             strategy.scanner_task = task
             task.start()
             self.logger.info(f"Started {strategy.name} scanner task")
@@ -511,7 +471,7 @@ class CryptoCommands(commands.Cog):
             
             await ctx.send(f"Running manual {strategy} scan...")
             try:
-                signals = strategy_obj.scanner.scan()
+                signals = await asyncio.to_thread(strategy_obj.scanner.scan)
                 if signals:
                     await strategy_obj.send_signals(signals)
                 else:
