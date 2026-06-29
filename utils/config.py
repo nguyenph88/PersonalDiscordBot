@@ -18,39 +18,6 @@ class Config:
     discord_activity_name: str
     discord_activity_type: str
     discord_status_type: str
-    
-    # AllDebrid API configuration
-    alldebrid_api_key: str = None
-    
-    # Channel management configuration
-    request_channel_name: str = None
-    request_channel_purge_hours: int = None
-    
-    # Crypto trading channel names
-    crypto_day_trade_channel: str = "day-trade"
-    crypto_swing_trade_channel: str = "swing-trade"
-    crypto_long_term_trade_channel: str = "long-term-trade"
-    
-    # Virtual trader channel
-    virtual_trader_channel: str = "virtual-trader"
-    
-    # Virtual trader database configuration
-    virtual_trader_database_type: str = "sqlite"
-    virtual_trader_database_port: int = 3306
-    virtual_trader_database_host: str = "127.0.0.1"
-    virtual_trader_database_name: str = "virtualtrader"
-    virtual_trader_database_user: str = "trader"
-    virtual_trader_database_password: str = ""
-    
-    # Virtual trader strategy coin configurations
-    virtual_trader_day_strategy_coins: str = "AVAX-USD,SOL-USD,ADA-USD,GRT-USD,CRV-USD"
-    virtual_trader_swing_strategy_coins: str = "MATIC-USD,QNT-USD,LCX-USD"
-    virtual_trader_long_strategy_coins: str = "AVAX-USD,CHZ-USD,ICP-USD"
-    
-    # Crypto strategy coin configurations
-    crypto_day_strategy_coins: str = "GRT-USD,AVAX-USD,CRV-USD"
-    crypto_swing_strategy_coins: str = "GRT-USD,AVAX-USD,CRV-USD"
-    crypto_long_strategy_coins: str = "CRV-USD,GRT-USD,ADA-USD,MATIC-USD"
 
     @classmethod
     def from_dict(self, **kwargs) -> "Config":
@@ -58,25 +25,7 @@ class Config:
         kwargs_overwrite = {}
 
         for k, v in kwargs.items():
-            # Convert environment variable names to dataclass field names
-            if k == "REQUEST_CHANNEL_NAME":
-                new_key = "request_channel_name"
-            elif k == "REQUEST_CHANNEL_PURGE_HOURS":
-                new_key = "request_channel_purge_hours"
-            elif k == "VIRTUAL_TRADER_DAY_STRATEGY_COINS":
-                new_key = "virtual_trader_day_strategy_coins"
-            elif k == "VIRTUAL_TRADER_SWING_STRATEGY_COINS":
-                new_key = "virtual_trader_swing_strategy_coins"
-            elif k == "VIRTUAL_TRADER_LONG_STRATEGY_COINS":
-                new_key = "virtual_trader_long_strategy_coins"
-            elif k == "CRYPTO_DAY_STRATEGY_COINS":
-                new_key = "crypto_day_strategy_coins"
-            elif k == "CRYPTO_SWING_STRATEGY_COINS":
-                new_key = "crypto_swing_strategy_coins"
-            elif k == "CRYPTO_LONG_STRATEGY_COINS":
-                new_key = "crypto_long_strategy_coins"
-            else:
-                new_key = k.lower()
+            new_key = k.lower()
 
             if v.isdigit():
                 kwargs_overwrite[new_key] = int(v)
@@ -88,11 +37,9 @@ class Config:
     @classmethod
     def from_env(self, filename: str = ".env") -> "Config":
         """ Create a Config object from a .env file. """
-        # Check if .env file exists
         if not os.path.exists(filename):
             print(f"Warning: {filename} file not found. Please create it with the required environment variables.")
             print("Required variables: DISCORD_TOKEN, DISCORD_PREFIX, DISCORD_OWNER_ID, DISCORD_JOIN_MESSAGE, DISCORD_ACTIVITY_NAME, DISCORD_ACTIVITY_TYPE, DISCORD_STATUS_TYPE")
-            print("Optional variables: ALLDEBRID_API_KEY, REQUEST_CHANNEL_NAME, REQUEST_CHANNEL_PURGE_HOURS, CRYPTO_DAY_TRADE_CHANNEL, CRYPTO_SWING_TRADE_CHANNEL, CRYPTO_LONG_TERM_TRADE_CHANNEL, CRYPTO_DAY_STRATEGY_COINS, CRYPTO_SWING_STRATEGY_COINS, CRYPTO_LONG_STRATEGY_COINS, VIRTUAL_TRADER_CHANNEL, VIRTUAL_TRADER_DATABASE_TYPE, VIRTUAL_TRADER_DATABASE_PORT, VIRTUAL_TRADER_DATABASE_HOST, VIRTUAL_TRADER_DATABASE_NAME, VIRTUAL_TRADER_DATABASE_USER, VIRTUAL_TRADER_DATABASE_PASSWORD, VIRTUAL_TRADER_DAY_STRATEGY_COINS, VIRTUAL_TRADER_SWING_STRATEGY_COINS, VIRTUAL_TRADER_LONG_STRATEGY_COINS")
             raise FileNotFoundError(f"{filename} file not found. Please create it with the required environment variables.")
-        
+
         return Config.from_dict(**dotenv_values(filename))
